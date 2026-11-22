@@ -1,0 +1,13 @@
+[
+  { "id": "easylist", "title": "EasyList", "url": "https://easylist.to/easylist/easylist.txt", "category": "Ads", "default_enabled": true },
+  { "id": "easyprivacy", "title": "EasyPrivacy", "url": "https://easylist.to/easylist/easyprivacy.txt", "category": "Privacy", "default_enabled": true },
+  { "id": "ublock-filters", "title": "uBlock Origin filters", "url": "https://ublockorigin.github.io/uAssets/filters/filters.min.txt", "category": "Ads", "default_enabled": true },
+  { "id": "ublock-privacy", "title": "uBlock Origin privacy", "url": "https://ublockorigin.github.io/uAssets/filters/privacy.min.txt", "category": "Privacy", "default_enabled": true },
+  { "id": "ublock-badware", "title": "uBlock Origin badware risks", "url": "https://ublockorigin.github.io/uAssets/filters/badware.min.txt", "category": "Security", "default_enabled": true },
+  { "id": "ublock-unbreak", "title": "uBlock Origin unbreak", "url": "https://ublockorigin.github.io/uAssets/filters/unbreak.min.txt", "category": "Ads", "default_enabled": true },
+  { "id": "ublock-quick-fixes", "title": "uBlock Origin quick fixes", "url": "https://ublockorigin.github.io/uAssets/filters/quick-fixes.min.txt", "category": "Ads", "default_enabled": true },
+  { "id": "peter-lowe", "title": "Peter Lowe's ad and tracking server list", "url": "https://pgl.yoyo.org/adservers/serverlist.php?hostformat=adblockplus&showintro=0&mimetype=plaintext", "category": "Ads", "default_enabled": true },
+  { "id": "easylist-cookie", "title": "EasyList Cookie List", "url": "https://secure.fanboy.co.nz/easylist-cookie.txt", "category": "CookieNotices", "default_enabled": true },
+  { "id": "fanboy-annoyances", "title": "Fanboy Annoyances", "url": "https://secure.fanboy.co.nz/fanboy-annoyance.txt", "category": "Annoyances", "default_enabled": false },
+  { "id": "ublock-annoyances", "title": "uBlock Origin annoyances", "url": "https://ublockorigin.github.io/uAssets/filters/annoyances.min.txt", "category": "Annoyances", "default_enabled": false }
+]
