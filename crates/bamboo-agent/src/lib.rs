@@ -9,7 +9,12 @@
 //! The same tool registry ([`tool_specs`]) is used by the built-in Claude
 //! assistant, so both paths offer identical tools.
 
+use std::path::Path;
 use std::sync::Arc;
+
+mod config;
+mod server;
+mod tools;
 
 uniffi::setup_scaffolding!();
 
@@ -75,60 +80,68 @@ pub trait AgentHost: Send + Sync {
 
 #[derive(uniffi::Object)]
 pub struct AgentServer {
-    // STUB(phase1): replaced by the real listener state.
-    _socket_path: String,
-    _host: Arc<dyn AgentHost>,
+    shared: Arc<server::Shared>,
 }
 
 #[uniffi::export]
 impl AgentServer {
     #[uniffi::constructor]
     pub fn new(socket_path: String, host: Arc<dyn AgentHost>, server_version: String) -> Arc<Self> {
-        let _ = server_version; // STUB(phase1)
         Arc::new(Self {
-            _socket_path: socket_path,
-            _host: host,
+            shared: server::Shared::new(socket_path.into(), host, server_version),
         })
     }
 
     /// Binds the socket (mode 0600, replacing a stale socket file) and starts
     /// accepting clients on a background thread. Errors if already running.
     pub fn start(&self) -> Result<(), AgentError> {
-        Ok(()) // STUB(phase1)
+        self.shared.start()
     }
 
     /// Disconnects all clients and removes the socket file.
     pub fn stop(&self) {
-        // STUB(phase1)
+        self.shared.stop();
     }
 
     pub fn is_running(&self) -> bool {
-        false // STUB(phase1)
+        self.shared.is_running()
     }
 
     pub fn clients(&self) -> Vec<AgentClient> {
-        vec![] // STUB(phase1)
+        self.shared.clients()
     }
 
     /// Hides tools from `tools/list` and rejects calls to them, then notifies
     /// connected clients with `notifications/tools/list_changed`.
     pub fn set_disabled_tools(&self, names: Vec<String>) {
-        let _ = names; // STUB(phase1)
+        self.shared.set_disabled_tools(names);
     }
 }
 
 /// Every browser tool, in a stable order.
 #[uniffi::export]
 pub fn tool_specs() -> Vec<ToolSpec> {
-    vec![] // STUB(phase1)
+    tools::registry()
+        .iter()
+        .map(|tool| ToolSpec {
+            name: tool.name.to_owned(),
+            title: tool.title.to_owned(),
+            description: tool.description.to_owned(),
+            input_schema_json: tool.schema.to_string(),
+            read_only: tool.read_only,
+        })
+        .collect()
 }
 
 /// Validates `arguments_json` against the tool's schema and returns it
 /// normalized (defaults filled in).
 #[uniffi::export]
 pub fn validate_tool_input(name: String, arguments_json: String) -> Result<String, AgentError> {
-    let _ = name; // STUB(phase1)
-    Ok(arguments_json)
+    let arguments =
+        serde_json::from_str(&arguments_json).map_err(|error| AgentError::InvalidArguments {
+            message: format!("arguments are not valid JSON: {error}"),
+        })?;
+    tools::validate(&name, &arguments).map(|arguments| arguments.to_string())
 }
 
 /// Adds (or replaces) `server_name` under `mcpServers` in Claude Desktop's
@@ -140,8 +153,7 @@ pub fn install_claude_desktop_server(
     server_name: String,
     command_path: String,
 ) -> Result<(), AgentError> {
-    let _ = (config_path, server_name, command_path); // STUB(phase1)
-    Ok(())
+    config::install(Path::new(&config_path), &server_name, &command_path)
 }
 
 /// Removes `server_name` from Claude Desktop's config, keeping every other key.
@@ -150,8 +162,7 @@ pub fn remove_claude_desktop_server(
     config_path: String,
     server_name: String,
 ) -> Result<(), AgentError> {
-    let _ = (config_path, server_name); // STUB(phase1)
-    Ok(())
+    config::remove(Path::new(&config_path), &server_name)
 }
 
 /// Whether `server_name` is present in Claude Desktop's config.
@@ -160,6 +171,5 @@ pub fn claude_desktop_server_installed(
     config_path: String,
     server_name: String,
 ) -> Result<bool, AgentError> {
-    let _ = (config_path, server_name); // STUB(phase1)
-    Ok(false)
+    config::installed(Path::new(&config_path), &server_name)
 }

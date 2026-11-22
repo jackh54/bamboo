@@ -10,5 +10,9 @@ publish = false
 name = "bamboo-mcp"
 path = "src/main.rs"
 
+[dev-dependencies]
+bamboo-agent = { path = "../bamboo-agent" }
+serde_json.workspace = true
+
 [lints]
 workspace = true
