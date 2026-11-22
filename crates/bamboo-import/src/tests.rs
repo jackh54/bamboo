@@ -210,22 +210,30 @@ fn import_session_reads_each_browser_password_once() {
 }
 
 #[test]
-fn import_session_asks_again_after_a_refused_keychain_read() {
+fn import_session_asks_once_after_a_refused_keychain_read() {
     let session = ImportSession::default();
-    let refused = session.key(BrowserKind::Brave, || {
+    let refuse = || {
         Err(ImportError::Keychain {
             message: "denied".into(),
         })
-    });
-    assert!(matches!(refused, Err(ImportError::Keychain { .. })));
+    };
+    assert!(matches!(
+        session.key(BrowserKind::Brave, refuse),
+        Err(ImportError::Keychain { .. })
+    ));
+    assert!(matches!(
+        session.key(BrowserKind::Brave, || unreachable!()),
+        Err(ImportError::Keychain { .. })
+    ));
+
     let mut asked_again = false;
-    session
+    ImportSession::default()
         .key(BrowserKind::Brave, || {
             asked_again = true;
             Ok(b"password".to_vec())
         })
         .unwrap();
-    assert!(asked_again);
+    assert!(asked_again, "a new import should ask again");
 }
 
 #[test]

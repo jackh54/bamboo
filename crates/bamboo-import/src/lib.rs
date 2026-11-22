@@ -25,7 +25,7 @@ use std::{
 
 uniffi::setup_scaffolding!();
 
-#[derive(Debug, thiserror::Error, uniffi::Error)]
+#[derive(Debug, Clone, thiserror::Error, uniffi::Error)]
 pub enum ImportError {
     #[error("not found: {path}")]
     NotFound { path: String },
@@ -187,12 +187,12 @@ pub fn discover_profiles(home_dir: String) -> Vec<SourceProfile> {
     profiles
 }
 
-/// One import run. It keeps each browser's Keychain key, so macOS asks once per
-/// browser instead of once for every profile and kind. The keys are dropped
-/// with the session.
+/// One import run. It keeps each browser's Keychain answer, the key or the
+/// refusal, so macOS asks once per browser instead of once for every profile
+/// and kind. Both are dropped with the session, so the next import asks again.
 #[derive(Default, uniffi::Object)]
 pub struct ImportSession {
-    keys: Mutex<HashMap<BrowserKind, crypto::Key>>,
+    keys: Mutex<HashMap<BrowserKind, Result<crypto::Key, ImportError>>>,
 }
 
 #[uniffi::export]
@@ -256,19 +256,16 @@ impl ImportSession {
 }
 
 impl ImportSession {
-    /// The browser's value key. The Keychain password is read the first time;
-    /// a failed read is not kept, so the next import asks again.
+    /// The browser's value key. The Keychain password is read only the first
+    /// time; later calls get the same key or the same refusal.
     pub(crate) fn key(
         &self,
         browser: BrowserKind,
         read_password: impl FnOnce() -> Result<Vec<u8>, ImportError>,
     ) -> Result<crypto::Key, ImportError> {
         let mut keys = self.keys.lock().unwrap_or_else(PoisonError::into_inner);
-        if let Some(key) = keys.get(&browser) {
-            return Ok(*key);
-        }
-        let key = crypto::derive_key(&read_password()?);
-        keys.insert(browser, key);
-        Ok(key)
+        keys.entry(browser)
+            .or_insert_with(|| read_password().map(|password| crypto::derive_key(&password)))
+            .clone()
     }
 }
