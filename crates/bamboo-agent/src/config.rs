@@ -2,7 +2,7 @@
 
 use std::ffi::OsString;
 use std::fs;
-use std::io;
+use std::io::{self, Write};
 use std::path::Path;
 
 use serde_json::{Map, Value, json};
@@ -85,16 +85,41 @@ fn write(path: &Path, root: &Map<String, Value>, backup: bool) -> Result<(), Age
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|error| io_error(parent, &error))?;
     }
+    // A symlinked config (dotfiles) must stay a symlink, so replace what it points to.
+    let target = if backup {
+        fs::canonicalize(path).map_err(|error| io_error(path, &error))?
+    } else {
+        path.to_path_buf()
+    };
     if backup {
         let mut backup_path = OsString::from(path);
         backup_path.push(".bamboo-backup");
-        fs::copy(path, &backup_path).map_err(|error| io_error(Path::new(&backup_path), &error))?;
+        fs::copy(&target, &backup_path)
+            .map_err(|error| io_error(Path::new(&backup_path), &error))?;
     }
     let mut text = serde_json::to_string_pretty(root).map_err(|error| AgentError::Config {
         message: error.to_string(),
     })?;
     text.push('\n');
-    fs::write(path, text).map_err(|error| io_error(path, &error))
+
+    // Write beside the target and rename, so a full disk or crash never leaves a truncated config.
+    let mut temp_path = OsString::from(&target);
+    temp_path.push(".bamboo-tmp");
+    let temp_path = Path::new(&temp_path);
+    let written = (|| {
+        let mut file = fs::File::create(temp_path)?;
+        if backup {
+            file.set_permissions(fs::metadata(&target)?.permissions())?;
+        }
+        file.write_all(text.as_bytes())?;
+        file.sync_all()?;
+        fs::rename(temp_path, &target)
+    })();
+    written.map_err(|error| {
+        // Best-effort cleanup; the write error is what matters.
+        let _ = fs::remove_file(temp_path);
+        io_error(&target, &error)
+    })
 }
 
 fn not_an_object(path: &Path) -> AgentError {

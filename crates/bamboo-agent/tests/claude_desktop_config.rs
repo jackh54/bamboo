@@ -116,6 +116,34 @@ fn malformed_files_are_reported_and_left_alone() {
 }
 
 #[test]
+fn a_symlinked_config_stays_a_symlink_and_no_temp_file_is_left() {
+    let dir = tempfile::tempdir().unwrap();
+    let real = dir.path().join("dotfiles-config.json");
+    let link = dir.path().join("claude_desktop_config.json");
+    fs::write(&real, r#"{"theme": "dark"}"#).unwrap();
+    std::os::unix::fs::symlink(&real, &link).unwrap();
+
+    install_claude_desktop_server(path_string(&link), "bamboo".into(), COMMAND.into()).unwrap();
+
+    assert!(
+        fs::symlink_metadata(&link)
+            .unwrap()
+            .file_type()
+            .is_symlink()
+    );
+    let written: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(&real).unwrap()).unwrap();
+    assert_eq!(written["mcpServers"]["bamboo"]["command"], COMMAND);
+    assert_eq!(written["theme"], "dark");
+    let leftovers: Vec<_> = fs::read_dir(dir.path())
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name().into_string().unwrap())
+        .filter(|name| name.ends_with(".bamboo-tmp"))
+        .collect();
+    assert!(leftovers.is_empty(), "{leftovers:?}");
+}
+
+#[test]
 fn remove_and_installed() {
     let dir = tempfile::tempdir().unwrap();
     let config = dir.path().join("claude_desktop_config.json");

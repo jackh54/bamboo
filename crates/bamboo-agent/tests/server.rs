@@ -57,6 +57,7 @@ impl AgentHost for TestHost {
                 is_error: false,
             },
             "snapshot" => text("no such tab", true),
+            "read_page" => text(&"x".repeat(4 * 1024 * 1024), false),
             _ => text(&format!("ran {name}"), false),
         };
         self.finished_calls.fetch_add(1, Ordering::SeqCst);
@@ -488,6 +489,39 @@ fn clients_are_tracked_and_reported_to_the_host() {
     wait_until("the last disconnect to be reported", || {
         server.host.latest_clients().is_some_and(|c| c.is_empty())
     });
+}
+
+#[test]
+fn a_client_that_stops_reading_never_blocks_the_app() {
+    let server = TestServer::start();
+    let mut stuck = server.connect();
+    stuck.initialize();
+    stuck.request(2, "ping", json!({}));
+    // The 4 MB reply cannot fit in the socket buffers, and this client never reads it.
+    stuck.send(json!({"jsonrpc": "2.0", "id": 3, "method": "tools/call",
+        "params": {"name": "read_page", "arguments": {}}}));
+    wait_until("the tool call to finish", || {
+        server.host.finished_calls.load(Ordering::SeqCst) == 1
+    });
+
+    let mut healthy = server.connect();
+    healthy.initialize();
+    healthy.request(2, "ping", json!({}));
+
+    let started = Instant::now();
+    server.server.set_disabled_tools(vec!["evaluate".into()]);
+    server.server.set_disabled_tools(vec![]);
+    assert!(
+        started.elapsed() < Duration::from_secs(2),
+        "set_disabled_tools blocked"
+    );
+    // Other clients still get their notifications.
+    assert_eq!(healthy.read()["method"], "notifications/tools/list_changed");
+
+    let started = Instant::now();
+    server.server.stop();
+    assert!(started.elapsed() < Duration::from_secs(2), "stop blocked");
+    assert!(!server.server.is_running());
 }
 
 #[test]
