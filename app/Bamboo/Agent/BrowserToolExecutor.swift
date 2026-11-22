@@ -22,6 +22,10 @@ final class AgentSession {
     let id: String
     var name: String
     weak var currentTab: Tab?
+    /// A tab this caller may use whatever the access setting: the Claude
+    /// panel's current tab during an agent-mode run. Other callers and popups
+    /// opened from the tab get nothing from it.
+    weak var grantedTab: Tab?
 
     init(id: String, name: String) {
         self.id = id
@@ -32,7 +36,8 @@ final class AgentSession {
 /// Runs the browser tools for MCP clients and the Claude panel. Arguments have
 /// already been validated and normalized against `tool_specs()`. Access rules
 /// are enforced here, whatever the caller: private tabs are never reachable,
-/// and with `.agentTabsOnly` only agent-controlled tabs are.
+/// and with `.agentTabsOnly` only agent-controlled tabs and the caller's own
+/// granted tab are.
 @MainActor
 @Observable
 final class BrowserToolExecutor {
@@ -54,9 +59,9 @@ final class BrowserToolExecutor {
         activityByTab[tab.id] ?? []
     }
 
-    func canAccess(_ tab: Tab) -> Bool {
+    func canAccess(_ tab: Tab, for session: AgentSession) -> Bool {
         guard !tab.isPrivate else { return false }
-        return settings.agentAccess == .allTabs || tab.isAgentControlled
+        return settings.agentAccess == .allTabs || tab.isAgentControlled || session.grantedTab === tab
     }
 
     func run(_ tool: String, arguments: JSONValue, session: AgentSession) async -> ToolOutcome {
@@ -142,7 +147,7 @@ final class BrowserToolExecutor {
     // MARK: - Tabs
 
     private func tabsList(_ session: AgentSession) -> String {
-        let tabs = windows.allTabs.filter(canAccess)
+        let tabs = windows.allTabs.filter { canAccess($0, for: session) }
         guard !tabs.isEmpty else {
             let scope = settings.agentAccess == .agentTabsOnly
                 ? " Agents can use tabs they open and tabs the user hands over (Tab ▸ Let Agents Control This Tab)."
@@ -171,12 +176,12 @@ final class BrowserToolExecutor {
 
     private func accessibleTab(_ args: JSONValue, _ session: AgentSession) throws -> Tab {
         if let id = args["tab_id"]?.string {
-            guard let uuid = UUID(uuidString: id), let tab = windows.tab(id: uuid), canAccess(tab) else {
+            guard let uuid = UUID(uuidString: id), let tab = windows.tab(id: uuid), canAccess(tab, for: session) else {
                 throw ToolFailure("No tab \(id) is available to agents. Call tabs_list to see the tabs you can use.")
             }
             return tab
         }
-        guard let tab = session.currentTab, windows.tab(id: tab.id) != nil, canAccess(tab) else {
+        guard let tab = session.currentTab, windows.tab(id: tab.id) != nil, canAccess(tab, for: session) else {
             throw ToolFailure("There is no current tab. Open one with tab_open, or choose one from tabs_list with tab_select.")
         }
         return tab
@@ -480,7 +485,7 @@ final class BrowserToolExecutor {
     }
 
     private func profile(_ session: AgentSession) -> Profile {
-        session.currentTab.flatMap { canAccess($0) ? $0.profile : nil } ?? AppServices.shared.profiles.defaultProfile
+        session.currentTab.flatMap { canAccess($0, for: session) ? $0.profile : nil } ?? AppServices.shared.profiles.defaultProfile
     }
 
     // MARK: - Page scripts

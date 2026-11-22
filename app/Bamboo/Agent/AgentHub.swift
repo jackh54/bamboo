@@ -15,6 +15,9 @@ final class AgentHub {
 
     @ObservationIgnored private var server: AgentServer?
     @ObservationIgnored private var sessions: [String: AgentSession] = [:]
+    /// Server calls that write to every client (tool list changes, stopping)
+    /// run here in order: a client that stops reading must not block the main thread.
+    @ObservationIgnored private let serverQueue = DispatchQueue(label: "dev.pandascript.Bamboo.agent-server")
 
     var socketPath: String { AppPaths.agentSocket.path }
 
@@ -26,8 +29,16 @@ final class AgentHub {
         applySettings()
     }
 
+    /// At quit. Waits briefly so the socket file is removed, but a stuck
+    /// client can't keep the app from quitting.
     func stop() {
-        server?.stop()
+        guard let server else { return }
+        let stopped = DispatchSemaphore(value: 0)
+        serverQueue.async {
+            server.stop()
+            stopped.signal()
+        }
+        _ = stopped.wait(timeout: .now() + 2)
         isRunning = false
         clients = []
     }
@@ -44,22 +55,35 @@ final class AgentHub {
     private func applySettings() {
         guard let server else { return }
         withObservationTracking {
-            server.setDisabledTools(names: disabledTools)
+            let disabled = disabledTools
             let enabled = AppServices.shared.settings.agentServerEnabled
-            if enabled, !server.isRunning() {
-                do {
-                    try server.start()
-                    startError = nil
-                } catch {
-                    startError = error.localizedDescription
-                    AppServices.shared.reportNonFatal(error, "Starting the agent server")
+            serverQueue.async {
+                server.setDisabledTools(names: disabled)
+                let failure: String?
+                if enabled, !server.isRunning() {
+                    do {
+                        try server.start()
+                        failure = nil
+                    } catch {
+                        failure = error.localizedDescription
+                    }
+                } else {
+                    if !enabled, server.isRunning() { server.stop() }
+                    failure = nil
                 }
-            } else if !enabled, server.isRunning() {
-                stop()
+                let running = server.isRunning()
+                Task { @MainActor in AppServices.shared.agent.serverChanged(isRunning: running, startError: failure) }
             }
-            isRunning = server.isRunning()
         } onChange: {
             Task { @MainActor in AppServices.shared.agent.applySettings() }
+        }
+    }
+
+    private func serverChanged(isRunning: Bool, startError: String?) {
+        self.isRunning = isRunning
+        self.startError = startError
+        if !isRunning {
+            clients = []
         }
     }
 
@@ -71,6 +95,10 @@ final class AgentHub {
             arguments = try JSONValue(parsing: argumentsJSON)
         } catch {
             return ToolOutcome(content: [.text(text: "The arguments are not valid JSON: \(error.localizedDescription)")], isError: true)
+        }
+        // Calls already queued when the user turned agents off don't run.
+        guard AppServices.shared.settings.agentServerEnabled else {
+            return ToolOutcome(content: [.text(text: "The user turned off agent access in Bamboo's settings.")], isError: true)
         }
         if disabledTools.contains(name) {
             return ToolOutcome(content: [.text(text: "\(name) is turned off in Bamboo's settings.")], isError: true)

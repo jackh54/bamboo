@@ -62,7 +62,8 @@ enum WebViewInput {
     /// Presses and releases a key. Command chords never go through key
     /// equivalents: ones the page ignores would reach Bamboo's menus, so an
     /// agent's Command-Q would quit the browser. The page gets them as key
-    /// events instead, and the standard editing chords run their command.
+    /// events instead. Only Command-A also runs its editing command; copy, cut
+    /// and paste would let an agent read or overwrite the user's clipboard.
     static func press(_ name: String, modifiers: NSEvent.ModifierFlags, in webView: WKWebView) throws {
         let key = try key(named: name, shift: modifiers.contains(.shift))
         var flags = modifiers
@@ -71,8 +72,8 @@ enum WebViewInput {
         }
         let down = try keyEvent(.keyDown, key, flags, in: webView)
         let up = try keyEvent(.keyUp, key, flags, in: webView)
-        if flags.contains(.command), let command = editingCommands[key.charactersIgnoringModifiers.lowercased()] {
-            webView.tryToPerform(command, with: nil)
+        if flags.contains(.command), key.charactersIgnoringModifiers.lowercased() == "a" {
+            webView.tryToPerform(#selector(NSText.selectAll(_:)), with: nil)
         } else {
             webView.keyDown(with: down)
         }
@@ -92,13 +93,6 @@ enum WebViewInput {
     }
 
     // MARK: - Private
-
-    private static let editingCommands: [String: Selector] = [
-        "a": #selector(NSText.selectAll(_:)),
-        "c": #selector(NSText.copy(_:)),
-        "x": #selector(NSText.cut(_:)),
-        "v": #selector(NSText.paste(_:)),
-    ]
 
     /// The character AppKit uses for a function key (arrows, F1, …).
     private static func function(_ code: Int) -> String {
