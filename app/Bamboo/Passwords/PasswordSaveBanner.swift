@@ -57,7 +57,7 @@ struct PasswordSaveBanner: View {
     private func check(_ offer: PasswordSaveOffer) {
         errorMessage = nil
         do {
-            replacesSavedPassword = try AppServices.shared.passwords
+            replacesSavedPassword = try tab.profile.passwords
                 .logins(forHost: offer.login.host, isSecure: offer.login.isSecure)
                 .contains { $0.username == offer.login.username && $0.port == offer.login.port }
         } catch {
@@ -67,7 +67,7 @@ struct PasswordSaveBanner: View {
 
     private func save(_ offer: PasswordSaveOffer) {
         do {
-            try AppServices.shared.passwords.save(offer.login, password: offer.password)
+            try tab.profile.passwords.save(offer.login, password: offer.password)
             tab.passwordSaveOffer = nil
         } catch {
             errorMessage = "Couldn't save the password: \(error.localizedDescription)"

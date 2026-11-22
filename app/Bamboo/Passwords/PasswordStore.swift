@@ -41,18 +41,18 @@ struct KeychainError: LocalizedError {
     }
 }
 
-/// Website passwords, kept as internet-password items in the user's login keychain. Every
-/// item carries `itemDescription`, so Bamboo lists only the items it created. (The
-/// data-protection keychain would need a signed team identifier.)
+/// One profile's website passwords, kept as internet-password items in the user's login
+/// keychain. Every item carries `itemDescription`, so a store lists only its own items.
+/// (The data-protection keychain would need a signed team identifier.)
 @MainActor
 @Observable
 final class PasswordStore {
     private(set) var logins: [SavedLogin] = []
-    @ObservationIgnored private let itemDescription: String
+    @ObservationIgnored let itemDescription: String
 
     static let label = "Bamboo"
 
-    init(itemDescription: String = "Bamboo website password") {
+    init(itemDescription: String) {
         self.itemDescription = itemDescription
     }
 
@@ -115,6 +115,17 @@ final class PasswordStore {
     func delete(_ login: SavedLogin) throws {
         try check(SecItemDelete(itemQuery(login) as CFDictionary))
         try reload()
+    }
+
+    /// Deletes every login in this store, for a profile that is being deleted.
+    func deleteAll() throws {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassInternetPassword,
+            kSecAttrDescription as String: itemDescription,
+        ]
+        let status = SecItemDelete(query as CFDictionary)
+        guard status == errSecSuccess || status == errSecItemNotFound else { throw KeychainError(status: status) }
+        logins = []
     }
 
     /// Every saved login as CSV in the column layout Chrome, Brave and Safari import.

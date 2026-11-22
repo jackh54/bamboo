@@ -15,4 +15,21 @@ final class ProfileManagerTests: XCTestCase {
 
         try await manager.deleteProfile(created)
     }
+
+    func testEachProfileHasItsOwnPasswordsAndDeletingItRemovesThem() async throws {
+        let manager = ProfileManager()
+        let profile = manager.createProfile(name: "Passwords \(UUID().uuidString)", symbol: "person.crop.circle")
+        let server = "bamboo-test-\(UUID().uuidString.lowercased()).invalid"
+        let login = SavedLogin(host: server, isSecure: true, port: nil, username: "jack", modified: nil)
+
+        try profile.passwords.save(login, password: "secret")
+        XCTAssertEqual(try profile.passwords.logins(forHost: server, isSecure: true).map(\.username), ["jack"])
+        XCTAssertTrue(try manager.defaultProfile.passwords.logins(forHost: server, isSecure: true).isEmpty)
+
+        let description = profile.passwords.itemDescription
+        try await manager.deleteProfile(profile)
+        let leftover = PasswordStore(itemDescription: description)
+        try leftover.reload()
+        XCTAssertTrue(leftover.logins.isEmpty)
+    }
 }

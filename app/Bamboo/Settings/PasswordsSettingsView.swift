@@ -5,7 +5,8 @@ import UniformTypeIdentifiers
 
 struct PasswordsSettingsView: View {
     @Bindable private var settings = AppServices.shared.settings
-    private let passwords = AppServices.shared.passwords
+    private let profiles = AppServices.shared.profiles
+    @State private var profileID: Profile.ID?
     @State private var query = ""
     /// Set once the user authenticates; cleared when they leave this section.
     @State private var isUnlocked = false
@@ -14,6 +15,16 @@ struct PasswordsSettingsView: View {
     @State private var deleting: SavedLogin?
     @State private var isExportWarningShown = false
     @State private var errorMessage: String?
+
+    /// Each profile has its own passwords, as in Brave. Shows the front window's profile
+    /// until the user picks another.
+    private var profile: Profile {
+        profileID.flatMap(profiles.profile(id:))
+            ?? AppServices.shared.windows.frontmostNonPrivate?.selectedSpace.profile
+            ?? profiles.defaultProfile
+    }
+
+    private var passwords: PasswordStore { profile.passwords }
 
     private var matchingLogins: [SavedLogin] {
         guard !query.isEmpty else { return passwords.logins }
@@ -36,6 +47,14 @@ struct PasswordsSettingsView: View {
                 Section {
                     Label(errorMessage, systemImage: "exclamationmark.triangle.fill")
                         .foregroundStyle(.red)
+                }
+            }
+
+            if profiles.profiles.count > 1 {
+                Section {
+                    Picker("Profile", selection: Binding { profile.id } set: { profileID = $0 }) {
+                        ForEach(profiles.profiles) { Text($0.name).tag($0.id) }
+                    }
                 }
             }
 
@@ -87,7 +106,10 @@ struct PasswordsSettingsView: View {
             }
         }
         .formStyle(.grouped)
-        .onAppear(perform: load)
+        .task(id: profile.id) {
+            revealed = [:]
+            load()
+        }
         .onDisappear {
             isUnlocked = false
             revealed = [:]

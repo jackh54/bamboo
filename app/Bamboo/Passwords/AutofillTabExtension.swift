@@ -14,6 +14,7 @@ final class AutofillTabExtension: NSObject, TabExtension, WKScriptMessageHandler
     private struct FillTarget {
         weak var webView: WKWebView?
         let frame: WKFrameInfo
+        let passwords: PasswordStore
     }
 
     private let script = WKUserScript(
@@ -21,7 +22,6 @@ final class AutofillTabExtension: NSObject, TabExtension, WKScriptMessageHandler
     /// Where the login picked from the open menu goes.
     private var fillTarget: FillTarget?
 
-    private var passwords: PasswordStore { AppServices.shared.passwords }
     private var settings: AppSettings { AppServices.shared.settings }
 
     func configure(_ configuration: WKWebViewConfiguration, for tab: Tab) {
@@ -41,7 +41,8 @@ final class AutofillTabExtension: NSObject, TabExtension, WKScriptMessageHandler
             guard let x = body["x"] as? Double, let y = body["y"] as? Double,
                   let width = body["width"] as? Double, let height = body["height"] as? Double
             else { return AppServices.shared.reportNonFatal(MessageError.malformed, "Autofill focus message") }
-            showLogins(for: origin, below: CGRect(x: x, y: y, width: width, height: height), frame: message.frameInfo, in: webView)
+            showLogins(for: origin, below: CGRect(x: x, y: y, width: width, height: height), frame: message.frameInfo,
+                       in: webView, from: tab.profile.passwords)
         case "submit":
             guard let username = body["username"] as? String, let password = body["password"] as? String,
                   username.count <= Self.maxFieldLength, password.count <= Self.maxFieldLength
@@ -58,7 +59,10 @@ final class AutofillTabExtension: NSObject, TabExtension, WKScriptMessageHandler
 
     // MARK: - Filling
 
-    private func showLogins(for origin: WKSecurityOrigin, below rect: CGRect, frame: WKFrameInfo, in webView: WKWebView) {
+    private func showLogins(
+        for origin: WKSecurityOrigin, below rect: CGRect, frame: WKFrameInfo, in webView: WKWebView,
+        from passwords: PasswordStore
+    ) {
         guard settings.autofillPasswords else { return }
         let port = origin.port == 0 ? nil : origin.port
         let logins: [SavedLogin]
@@ -84,7 +88,7 @@ final class AutofillTabExtension: NSObject, TabExtension, WKScriptMessageHandler
         manage.target = self
         menu.addItem(manage)
 
-        fillTarget = FillTarget(webView: webView, frame: frame)
+        fillTarget = FillTarget(webView: webView, frame: frame, passwords: passwords)
         // The rect is in CSS pixels of the viewport.
         let scale = webView.pageZoom * webView.magnification
         let bottom = (rect.maxY + 4) * scale
@@ -99,7 +103,7 @@ final class AutofillTabExtension: NSObject, TabExtension, WKScriptMessageHandler
         else { return }
         let password: String
         do {
-            password = try passwords.password(for: login)
+            password = try target.passwords.password(for: login)
         } catch {
             if (error as? KeychainError)?.status != errSecUserCanceled {
                 _ = webView.presentError(error)
@@ -143,6 +147,7 @@ final class AutofillTabExtension: NSObject, TabExtension, WKScriptMessageHandler
               !settings.neverSavePasswordHosts.contains(origin.host)
         else { return }
         let login = SavedLogin(origin, username: username)
+        let passwords = tab.profile.passwords
         let saved: SavedLogin?
         do {
             saved = try passwords.logins(forHost: login.host, isSecure: login.isSecure)

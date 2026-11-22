@@ -2,9 +2,9 @@ import Foundation
 import Observation
 import WebKit
 
-/// A browsing profile: its own cookies and site data (WKWebsiteDataStore) and its
-/// own history and bookmarks database. Private windows borrow a profile's
-/// bookmarks but use a throwaway data store and record no history.
+/// A browsing profile: its own cookies and site data (WKWebsiteDataStore), its own
+/// history and bookmarks database and its own saved passwords. Private windows borrow
+/// a profile's bookmarks but use a throwaway data store and record no history.
 @MainActor
 @Observable
 final class Profile: Identifiable {
@@ -14,6 +14,7 @@ final class Profile: Identifiable {
     let isDefault: Bool
     @ObservationIgnored let dataStore: WKWebsiteDataStore
     @ObservationIgnored let store: Store
+    @ObservationIgnored let passwords: PasswordStore
 
     init(record: ProfileRecord) {
         id = record.id
@@ -22,6 +23,10 @@ final class Profile: Identifiable {
         isDefault = record.isDefault
         dataStore = record.isDefault && !AppEnvironment.isRunningTests
             ? .default() : WKWebsiteDataStore(forIdentifier: record.id)
+        // The default profile keeps the description Bamboo used before each profile had
+        // its own passwords, so passwords saved then stay with it.
+        passwords = PasswordStore(itemDescription: record.isDefault && !AppEnvironment.isRunningTests
+            ? "Bamboo website password" : "Bamboo website password \(record.id.uuidString)")
         let databasePath = AppPaths.profileDirectory(record.id).appendingPathComponent("profile.sqlite").path
         do {
             store = try Store.open(path: databasePath)
@@ -79,9 +84,10 @@ final class ProfileManager {
         return profile
     }
 
-    /// Deletes a non-default profile with all its website data and its database.
+    /// Deletes a non-default profile with all its website data, its database and its passwords.
     func deleteProfile(_ profile: Profile) async throws {
         precondition(!profile.isDefault, "The default profile cannot be deleted")
+        try profile.passwords.deleteAll()
         profiles.removeAll { $0.id == profile.id }
         save()
         try await WKWebsiteDataStore.remove(forIdentifier: profile.id)

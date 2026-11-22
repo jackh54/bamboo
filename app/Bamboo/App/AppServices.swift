@@ -15,7 +15,6 @@ final class AppServices {
     let shields = ShieldsManager()
     let agent = AgentHub()
     let updater = Updater()
-    let passwords = PasswordStore()
 
     /// Features hooked into every tab, in call order. See `TabExtension`.
     private(set) var tabExtensions: [any TabExtension] = []

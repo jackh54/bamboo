@@ -212,7 +212,7 @@ final class ImportModel {
 
         case .passwords:
             let logins = bundle.logins.compactMap(ImportMapping.login)
-            let added = try AppServices.shared.passwords.saveNew(logins)
+            let added = try profile.passwords.saveNew(logins)
             var detail = Self.counted(added, "password")
             if logins.count > added {
                 detail += ", skipped \(logins.count - added) already saved"
