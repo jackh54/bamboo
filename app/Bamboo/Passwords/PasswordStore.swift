@@ -86,12 +86,21 @@ final class PasswordStore {
         try reload()
     }
 
-    /// Saves many logins, reading the list again once at the end.
-    func saveAll(_ entries: [(login: SavedLogin, password: String)]) throws {
+    /// Saves the logins that aren't saved yet and leaves existing ones alone, so an import
+    /// never replaces a newer password with an older one. Returns how many were added.
+    func saveNew(_ entries: [(login: SavedLogin, password: String)]) throws -> Int {
+        var added = 0
         for entry in entries {
-            try write(entry.login, password: entry.password)
+            var item = itemQuery(entry.login)
+            item[kSecAttrLabel as String] = Self.label
+            item[kSecValueData as String] = Data(entry.password.utf8)
+            let status = SecItemAdd(item as CFDictionary, nil)
+            if status == errSecDuplicateItem { continue }
+            try check(status)
+            added += 1
         }
         try reload()
+        return added
     }
 
     func update(_ login: SavedLogin, username: String, password: String) throws {
