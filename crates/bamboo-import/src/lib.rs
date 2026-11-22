@@ -10,6 +10,14 @@
 //! Databases are copied to a temporary directory before reading because the
 //! source browser may hold locks on them while running.
 
+mod chromium;
+mod common;
+mod crypto;
+mod firefox;
+mod safari;
+#[cfg(test)]
+mod tests;
+
 uniffi::setup_scaffolding!();
 
 #[derive(Debug, thiserror::Error, uniffi::Error)]
@@ -167,8 +175,11 @@ pub struct ImportBundle {
 /// Every profile of every supported browser under `home_dir`.
 #[uniffi::export]
 pub fn discover_profiles(home_dir: String) -> Vec<SourceProfile> {
-    let _ = home_dir; // STUB(phase1)
-    vec![]
+    let home = std::path::Path::new(&home_dir);
+    let mut profiles = chromium::discover(home);
+    profiles.extend(firefox::discover(home));
+    profiles.extend(safari::discover(home));
+    profiles
 }
 
 /// Reads the requested data kinds from `profile`. A kind that fails entirely
@@ -179,8 +190,46 @@ pub fn import_profile(
     profile: SourceProfile,
     request: ImportRequest,
 ) -> Result<ImportBundle, ImportError> {
-    let _ = request; // STUB(phase1)
-    Err(ImportError::NotFound {
-        path: profile.profile_dir,
-    })
+    let mut bundle = ImportBundle {
+        source: profile.clone(),
+        bookmarks: vec![],
+        history: vec![],
+        cookies: vec![],
+        logins: vec![],
+        search_engines: vec![],
+        extensions: vec![],
+        warnings: vec![],
+    };
+    let supported: &[ImportKind] = match profile.browser {
+        BrowserKind::Firefox => &[
+            ImportKind::Bookmarks,
+            ImportKind::History,
+            ImportKind::Cookies,
+        ],
+        BrowserKind::Safari => &[ImportKind::Bookmarks, ImportKind::History],
+        _ => &[
+            ImportKind::Bookmarks,
+            ImportKind::History,
+            ImportKind::Cookies,
+            ImportKind::Passwords,
+            ImportKind::SearchEngines,
+            ImportKind::Extensions,
+        ],
+    };
+    for kind in request
+        .kinds
+        .iter()
+        .filter(|kind| !supported.contains(kind))
+    {
+        bundle.warnings.push(format!(
+            "{kind:?} cannot be imported from {}",
+            profile.browser_name
+        ));
+    }
+    match profile.browser {
+        BrowserKind::Firefox => firefox::import(&profile, &request, &mut bundle)?,
+        BrowserKind::Safari => safari::import(&profile, &request, &mut bundle)?,
+        _ => chromium::import(&profile, &request, &mut bundle)?,
+    }
+    Ok(bundle)
 }
