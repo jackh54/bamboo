@@ -15,6 +15,7 @@ final class AppServices {
     let shields = ShieldsManager()
     let agent = AgentHub()
     let updater = Updater()
+    let passwords = PasswordStore()
 
     /// Features hooked into every tab, in call order. See `TabExtension`.
     private(set) var tabExtensions: [any TabExtension] = []
@@ -27,6 +28,11 @@ final class AppServices {
     func start() {
         tabExtensions = [
             HistoryTabExtension(),
+            // Before shields: it may redirect the navigation, and shields set up for the final URL.
+            PrivacyTabExtension(),
+            ShieldsTabExtension(),
+            SiteSettingsTabExtension(),
+            AutofillTabExtension(),
         ]
         shields.start()
         agent.start()
@@ -39,9 +45,18 @@ final class AppServices {
         startHibernation()
     }
 
-    func prepareForTermination() {
+    func prepareForTermination() async {
         windows.saveSession()
         agent.stop()
+        if settings.clearDataOnQuit {
+            for profile in profiles.profiles {
+                do {
+                    try await BrowsingDataCleaner.clear(.everything, since: nil, dataStore: profile.dataStore, store: profile.store)
+                } catch {
+                    reportNonFatal(error, "Clearing browsing data on quit")
+                }
+            }
+        }
     }
 
     /// For failures the browser can keep running through (a history write, a

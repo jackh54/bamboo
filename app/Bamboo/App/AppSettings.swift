@@ -20,6 +20,14 @@ enum HTTPSMode: String, CaseIterable, Codable, Sendable {
     case httpsOnly
 }
 
+enum TabLayout: String, CaseIterable, Codable, Sendable {
+    case vertical, horizontal
+}
+
+enum BookmarksBarVisibility: String, CaseIterable, Codable, Sendable {
+    case always, never, newTabOnly
+}
+
 enum AutoplayPolicy: String, CaseIterable, Codable, Sendable {
     case allow, blockAudible, blockAll
 }
@@ -49,6 +57,17 @@ final class AppSettings {
     var appearance: AppearanceMode { didSet { save(appearance.rawValue, .appearance) } }
     var sidebarPosition: SidebarPosition { didSet { save(sidebarPosition.rawValue, .sidebarPosition) } }
     var showFullURLs: Bool { didSet { save(showFullURLs, .showFullURLs) } }
+    var tabLayout: TabLayout { didSet { save(tabLayout.rawValue, .tabLayout) } }
+    var bookmarksBarVisibility: BookmarksBarVisibility { didSet { save(bookmarksBarVisibility.rawValue, .bookmarksBarVisibility) } }
+    var showHomeButton: Bool { didSet { save(showHomeButton, .showHomeButton) } }
+
+    // Content
+    /// Zoom for pages without a zoom of their own in site settings; 1 is 100%.
+    var defaultPageZoom: Double { didSet { save(defaultPageZoom, .defaultPageZoom) } }
+
+    // Shields defaults; a site can turn shields down from the Shields panel.
+    var blockTrackersAndAds: Bool { didSet { save(blockTrackersAndAds, .blockTrackersAndAds) } }
+    var blockScripts: Bool { didSet { save(blockScripts, .blockScripts) } }
 
     // Search
     var searchEngine: SearchEngineID { didSet { save(searchEngine.rawValue, .searchEngine) } }
@@ -64,6 +83,8 @@ final class AppSettings {
     // Passwords
     var offerToSavePasswords: Bool { didSet { save(offerToSavePasswords, .offerToSavePasswords) } }
     var autofillPasswords: Bool { didSet { save(autofillPasswords, .autofillPasswords) } }
+    /// Sites where the user chose "Never for This Site" when offered to save a password.
+    var neverSavePasswordHosts: [String] { didSet { save(neverSavePasswordHosts, .neverSavePasswordHosts) } }
 
     // AI and agents
     var agentServerEnabled: Bool { didSet { save(agentServerEnabled, .agentServerEnabled) } }
@@ -85,6 +106,12 @@ final class AppSettings {
         appearance = AppearanceMode(rawValue: defaults.string(forKey: Key.appearance.rawValue) ?? "") ?? .system
         sidebarPosition = SidebarPosition(rawValue: defaults.string(forKey: Key.sidebarPosition.rawValue) ?? "") ?? .left
         showFullURLs = defaults.object(forKey: Key.showFullURLs.rawValue) as? Bool ?? false
+        tabLayout = TabLayout(rawValue: defaults.string(forKey: Key.tabLayout.rawValue) ?? "") ?? .vertical
+        bookmarksBarVisibility = BookmarksBarVisibility(rawValue: defaults.string(forKey: Key.bookmarksBarVisibility.rawValue) ?? "") ?? .newTabOnly
+        showHomeButton = defaults.object(forKey: Key.showHomeButton.rawValue) as? Bool ?? false
+        defaultPageZoom = defaults.object(forKey: Key.defaultPageZoom.rawValue) as? Double ?? 1
+        blockTrackersAndAds = defaults.object(forKey: Key.blockTrackersAndAds.rawValue) as? Bool ?? true
+        blockScripts = defaults.object(forKey: Key.blockScripts.rawValue) as? Bool ?? false
         searchEngine = SearchEngineID(rawValue: defaults.string(forKey: Key.searchEngine.rawValue) ?? "") ?? .duckDuckGo
         searchSuggestionsEnabled = defaults.object(forKey: Key.searchSuggestionsEnabled.rawValue) as? Bool ?? true
         stripTrackingParameters = defaults.object(forKey: Key.stripTrackingParameters.rawValue) as? Bool ?? true
@@ -94,6 +121,7 @@ final class AppSettings {
         clearDataOnQuit = defaults.object(forKey: Key.clearDataOnQuit.rawValue) as? Bool ?? false
         offerToSavePasswords = defaults.object(forKey: Key.offerToSavePasswords.rawValue) as? Bool ?? true
         autofillPasswords = defaults.object(forKey: Key.autofillPasswords.rawValue) as? Bool ?? true
+        neverSavePasswordHosts = defaults.stringArray(forKey: Key.neverSavePasswordHosts.rawValue) ?? []
         agentServerEnabled = defaults.object(forKey: Key.agentServerEnabled.rawValue) as? Bool ?? true
         agentAccess = AgentAccess(rawValue: defaults.string(forKey: Key.agentAccess.rawValue) ?? "") ?? .agentTabsOnly
         agentCanEvaluateJavaScript = defaults.object(forKey: Key.agentCanEvaluateJavaScript.rawValue) as? Bool ?? false
@@ -105,10 +133,11 @@ final class AppSettings {
 
     private enum Key: String {
         case startupBehavior, hibernateAfterMinutes, askWhereToSaveDownloads, warnBeforeQuitting
-        case appearance, sidebarPosition, showFullURLs
+        case appearance, sidebarPosition, showFullURLs, tabLayout, bookmarksBarVisibility, showHomeButton
+        case defaultPageZoom, blockTrackersAndAds, blockScripts
         case searchEngine, searchSuggestionsEnabled
         case stripTrackingParameters, globalPrivacyControl, httpsMode, autoplayPolicy, clearDataOnQuit
-        case offerToSavePasswords, autofillPasswords
+        case offerToSavePasswords, autofillPasswords, neverSavePasswordHosts
         case agentServerEnabled, agentAccess, agentCanEvaluateJavaScript, agentCanReadHistory
         case assistantModel, assistantEffort
         case developerToolsEnabled
