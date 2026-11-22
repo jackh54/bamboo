@@ -8,7 +8,8 @@ import WebKit
 @MainActor
 @Observable
 final class ShieldsManager {
-    @ObservationIgnored let engine: Shields
+    /// Replaced after each build: the helper rewrites the engine on disk.
+    @ObservationIgnored private(set) var engine: Shields
 
     /// The compiled rule lists of the current build. Added to every web view whose site has shields on.
     private(set) var ruleLists: [WKContentRuleList] = []
@@ -33,12 +34,15 @@ final class ShieldsManager {
     }()
 
     init() {
-        let bundled = Bundle.main.resourceURL?.appendingPathComponent("FilterLists").path
         do {
-            engine = try Shields.open(stateDir: AppPaths.shieldsDirectory.path, bundledListsDir: bundled)
+            engine = try Self.openEngine()
         } catch {
             fatalError("Cannot open shields state: \(error)")
         }
+    }
+
+    private static func openEngine() throws -> Shields {
+        try Shields.open(stateDir: AppPaths.shieldsDirectory.path, bundledListsDir: ShieldsBuilder.bundledListsDirectory)
     }
 
     /// The most recent download of any enabled list.
@@ -152,13 +156,21 @@ final class ShieldsManager {
         }
     }
 
+    /// Builds in the helper process (see `ShieldsBuilder`), then loads its result.
     private func rebuild() async throws -> ShieldsBuild {
-        let engine = engine
-        return try await Task.detached(priority: .utility) { try engine.rebuild() }.value
+        try await ShieldsBuilder.buildInHelper()
+        engine = try Self.openEngine()
+        guard let build = try engine.currentBuild() else { throw UpdateError.noBuild }
+        return build
     }
 
     private func apply(_ build: ShieldsBuild) async throws {
-        let compiled = try await Self.compile(build.ruleSets, in: .default())
+        let store = ShieldsBuilder.ruleListStore
+        let available = Set(await store.availableIdentifiers() ?? [])
+        // Compiling is the helper's job; a build whose lists are missing (a new WebKit, a
+        // deleted store) goes back through it rather than compiling in the browser.
+        let build = build.ruleSets.allSatisfy({ available.contains($0.identifier) }) ? build : try await rebuild()
+        let compiled = try await Self.compile(build.ruleSets, in: store)
         let previous = ruleLists
         ruleLists = compiled
         self.build = build
@@ -217,6 +229,7 @@ final class ShieldsManager {
         case status(Int)
         case notText
         case notCompiled(String)
+        case noBuild
 
         var errorDescription: String? {
             switch self {
@@ -224,6 +237,7 @@ final class ShieldsManager {
             case .status(let code): "The server answered HTTP \(code)."
             case .notText: "The download is not UTF-8 text."
             case .notCompiled(let identifier): "WebKit returned no rule list for \(identifier)."
+            case .noBuild: "The shields builder finished without saving a build."
             }
         }
     }
