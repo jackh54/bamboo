@@ -13,7 +13,7 @@ serde.workspace = true
 serde_json.workspace = true
 # No `single-thread`: that feature makes `Engine` !Sync, and `Shields` is shared across threads.
 adblock = { version = "0.13", default-features = false, features = ["content-blocking", "embedded-domain-resolver", "full-regex-handling"] }
-sha2 = "0.10"
+sha2 = "0.11"
 
 [dev-dependencies]
 tempfile.workspace = true
