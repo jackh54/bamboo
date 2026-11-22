@@ -35,7 +35,7 @@ struct AppearanceSettingsView: View {
 
             Section("Toolbar") {
                 Toggle("Show home button", isOn: $settings.showHomeButton)
-                Picker("Show bookmarks bar", selection: $settings.bookmarksBarVisibility) {
+                Picker("Show bookmarks bar", selection: $settings.bookmarksBar) {
                     Text("Always").tag(BookmarksBarVisibility.always)
                     Text("Never").tag(BookmarksBarVisibility.never)
                     Text("Only on new tab").tag(BookmarksBarVisibility.newTabOnly)

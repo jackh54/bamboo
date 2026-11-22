@@ -197,6 +197,7 @@ final class Tab: Identifiable {
     // MARK: - Updates from TabWebViewDelegate
 
     func navigationStarted() {
+        webContentProcessCrashed = false
         blockedRequestCount = 0
         blockedHosts = []
         loadError = nil
@@ -226,9 +227,15 @@ final class Tab: Identifiable {
                     self.title = newTitle
                 }
             },
-            webView.observe(\.isLoading, options: [.initial, .new]) { [weak self] _, change in
+            webView.observe(\.isLoading, options: [.initial, .new, .old]) { [weak self] _, change in
                 let loading = change.newValue ?? false
-                MainActor.assumeIsolated { self?.isLoading = loading }
+                let finished = change.oldValue == true && !loading
+                MainActor.assumeIsolated {
+                    guard let self else { return }
+                    self.isLoading = loading
+                    // The page is back, so the picture of it can go.
+                    if finished { self.hibernationSnapshot = nil }
+                }
             },
             webView.observe(\.estimatedProgress, options: [.initial, .new]) { [weak self] _, change in
                 let progress = change.newValue ?? 0

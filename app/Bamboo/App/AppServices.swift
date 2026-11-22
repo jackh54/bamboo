@@ -28,6 +28,7 @@ final class AppServices {
     func start() {
         tabExtensions = [
             HistoryTabExtension(),
+            FaviconLoader.shared,
             // Before shields: it may redirect the navigation, and shields set up for the final URL.
             PrivacyTabExtension(),
             ShieldsTabExtension(),
