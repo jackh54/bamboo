@@ -138,6 +138,33 @@ final class AgentExecutorTests: XCTestCase {
         XCTAssertEqual(cleared as? String, "", "Meta+A selects the field's text")
     }
 
+    func testCommandChordsDontTouchTheClipboard() async throws {
+        let pasteboard = NSPasteboard.general
+        let saved = pasteboard.string(forType: .string)
+        defer {
+            pasteboard.clearContents()
+            if let saved { pasteboard.setString(saved, forType: .string) }
+        }
+        pasteboard.clearContents()
+        pasteboard.setString("copied-password", forType: .string)
+
+        let snapshot = try await run("snapshot")
+        let name = ref(snapshot, #"textbox "Name""#)
+        try await run("type_text", ["ref": .string(name), "text": "typed"])
+        let changeCount = pasteboard.changeCount
+        try await run("press_key", ["key": "a", "modifiers": ["Meta"]])
+        try await run("press_key", ["key": "c", "modifiers": ["Meta"]])
+        try await run("press_key", ["key": "x", "modifiers": ["Meta"]])
+        try await run("press_key", ["key": "ArrowRight"])
+        try await run("press_key", ["key": "v", "modifiers": ["Meta"]])
+        try await Task.sleep(for: .milliseconds(300))
+
+        let value = try await pageValue("document.getElementById('name').value")
+        XCTAssertEqual(value as? String, "typed", "Meta+V doesn't paste the user's clipboard")
+        XCTAssertEqual(pasteboard.changeCount, changeCount, "Meta+C and Meta+X don't write the clipboard")
+        XCTAssertEqual(pasteboard.string(forType: .string), "copied-password")
+    }
+
     func testDialogIsReportedAndAnswered() async throws {
         let snapshot = try await run("snapshot")
         let result = try await run("click", ["ref": .string(ref(snapshot, #"button "Delete""#))])
@@ -202,10 +229,12 @@ final class AgentExecutorTests: XCTestCase {
         let profile = AppServices.shared.profiles.defaultProfile
         let privateTab = Tab(profile: profile, isPrivate: true, dataStore: .nonPersistent(), url: nil)
         privateTab.isAgentControlled = true
-        XCTAssertFalse(executor.canAccess(privateTab), "private tabs are never available")
+        session.grantedTab = privateTab
+        XCTAssertFalse(executor.canAccess(privateTab, for: session), "private tabs are never available")
+        session.grantedTab = nil
         let userTab = Tab(profile: profile, isPrivate: false, dataStore: profile.dataStore, url: nil)
-        XCTAssertEqual(executor.canAccess(userTab), AppServices.shared.settings.agentAccess == .allTabs)
-        XCTAssertTrue(executor.canAccess(tab))
+        XCTAssertEqual(executor.canAccess(userTab, for: session), AppServices.shared.settings.agentAccess == .allTabs)
+        XCTAssertTrue(executor.canAccess(tab, for: session))
 
         let unknown = await executor.run("snapshot", arguments: ["tab_id": .string(UUID().uuidString)], session: session)
         XCTAssertTrue(unknown.isError)
@@ -220,6 +249,24 @@ final class AgentExecutorTests: XCTestCase {
         }
         let list = try await run("tabs_list")
         XCTAssertTrue(list.contains("\(tab.id.uuidString.lowercased()): Agent Fixture — https://fixture.bamboo.test/ (current)"), list)
+    }
+
+    func testPanelGrantStaysWithThePanel() throws {
+        let allTabs = AppServices.shared.settings.agentAccess == .allTabs
+        let window = try XCTUnwrap(AppServices.shared.windows.windowModel(containing: tab))
+        let userTab = window.newTab(url: nil, after: tab, select: false)
+        defer { window.close(userTab) }
+        let panel = AgentSession(id: "panel", name: "Claude")
+        panel.grantedTab = userTab
+        XCTAssertTrue(executor.canAccess(userTab, for: panel))
+        XCTAssertEqual(executor.canAccess(userTab, for: session), allTabs, "other agents don't get the panel's tab")
+
+        // A popup the page opens during the run (say, "Sign in with Google") isn't granted to anyone.
+        let popup = Tab(popupConfiguration: WKWebViewConfiguration(), opener: userTab)
+        defer { popup.close() }
+        XCTAssertFalse(popup.isAgentControlled)
+        XCTAssertEqual(executor.canAccess(popup, for: panel), allTabs)
+        XCTAssertEqual(executor.canAccess(popup, for: session), allTabs)
     }
 
     // MARK: - Helpers
