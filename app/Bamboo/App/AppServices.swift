@@ -27,6 +27,7 @@ final class AppServices {
     func start() {
         tabExtensions = [
             HistoryTabExtension(),
+            FaviconLoader.shared,
         ]
         shields.start()
         agent.start()
