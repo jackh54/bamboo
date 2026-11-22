@@ -8,7 +8,7 @@ import os
 final class AppServices {
     static let shared = AppServices()
 
-    let settings = AppSettings()
+    let settings = AppSettings(defaults: AppEnvironment.defaults)
     let profiles = ProfileManager()
     let windows = WindowManager()
     let downloads = DownloadManager()

@@ -20,7 +20,8 @@ final class Profile: Identifiable {
         name = record.name
         symbol = record.symbol
         isDefault = record.isDefault
-        dataStore = record.isDefault ? .default() : WKWebsiteDataStore(forIdentifier: record.id)
+        dataStore = record.isDefault && !AppEnvironment.isRunningTests
+            ? .default() : WKWebsiteDataStore(forIdentifier: record.id)
         let databasePath = AppPaths.profileDirectory(record.id).appendingPathComponent("profile.sqlite").path
         do {
             store = try Store.open(path: databasePath)

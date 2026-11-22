@@ -1,11 +1,30 @@
 import Foundation
 
-/// On-disk locations. Everything lives under ~/Library/Application Support/Bamboo,
-/// created with owner-only permissions.
+/// Unit tests run inside a real Bamboo process. They get their own data folder,
+/// website data store and settings so a test run never touches the user's tabs,
+/// history, cookies or preferences.
+enum AppEnvironment {
+    static let isRunningTests: Bool = {
+        let environment = ProcessInfo.processInfo.environment
+        return environment["XCTestConfigurationFilePath"] != nil || environment["XCTestBundlePath"] != nil
+    }()
+
+    @MainActor static let defaults: UserDefaults = {
+        guard isRunningTests else { return .standard }
+        guard let suite = UserDefaults(suiteName: "dev.pandascript.Bamboo.tests") else {
+            preconditionFailure("Cannot open the test settings suite")
+        }
+        return suite
+    }()
+}
+
+/// On-disk locations. Everything lives under ~/Library/Application Support/Bamboo
+/// ("Bamboo Tests" under XCTest), created with owner-only permissions.
 enum AppPaths {
     static let applicationSupport: URL = {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        return makeDirectory(base.appendingPathComponent("Bamboo", isDirectory: true))
+        let name = AppEnvironment.isRunningTests ? "Bamboo Tests" : "Bamboo"
+        return makeDirectory(base.appendingPathComponent(name, isDirectory: true))
     }()
 
     /// The agent socket path must stay under the 104-byte `sun_path` limit,
