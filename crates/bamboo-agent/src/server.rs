@@ -12,9 +12,10 @@ use std::os::unix::net::{UnixListener, UnixStream};
 use std::panic::{self, AssertUnwindSafe};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc::{Receiver, SyncSender, sync_channel};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::thread::{self, JoinHandle};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use serde_json::{Map, Value, json};
 
@@ -28,6 +29,14 @@ const INSTRUCTIONS: &str = "Bamboo is a web browser the user is looking at. Call
 
 /// Longest accepted line from a client; longer ones close the connection.
 const MAX_LINE_BYTES: usize = 8 * 1024 * 1024;
+
+/// How long a client may leave a write unread before it is disconnected.
+const WRITE_TIMEOUT: Duration = Duration::from_secs(30);
+
+/// Messages queued for one client; a client that falls this far behind is disconnected.
+const OUTGOING_QUEUE_LEN: usize = 64;
+
+const ACCEPT_RETRY_DELAY: Duration = Duration::from_millis(100);
 
 const PARSE_ERROR: i64 = -32700;
 const INVALID_REQUEST: i64 = -32600;
@@ -108,8 +117,8 @@ struct Connection {
     client_id: String,
     /// Used for reading and to shut the connection down.
     socket: UnixStream,
-    /// Responses from worker threads and notifications share this.
-    writer: Mutex<UnixStream>,
+    /// Feeds the connection's writer thread, so no caller ever blocks on a slow client.
+    outgoing: SyncSender<String>,
     client: Mutex<AgentClient>,
     initialized: AtomicBool,
     /// The client sent `notifications/initialized`.
@@ -122,13 +131,10 @@ impl Connection {
     fn send(&self, message: &Value) {
         let mut line = message.to_string();
         line.push('\n');
-        let mut writer = lock(&self.writer);
-        if writer
-            .write_all(line.as_bytes())
-            .and_then(|()| writer.flush())
-            .is_err()
-        {
-            // The peer is gone; closing ends the read loop, which unregisters the client.
+        // A full queue means the client stopped reading, a disconnected one
+        // that the writer thread gave up. Closing ends the read loop, which
+        // unregisters the client.
+        if self.outgoing.try_send(line).is_err() {
             self.close();
         }
     }
@@ -136,6 +142,18 @@ impl Connection {
     fn close(&self) {
         // Fails only when the socket is already closed, which is the goal.
         let _ = self.socket.shutdown(Shutdown::Both);
+    }
+}
+
+/// Writes queued messages until the queue closes or the client stops
+/// accepting data for `WRITE_TIMEOUT`, then closes the connection.
+fn write_loop(mut stream: UnixStream, outgoing: Receiver<String>) {
+    for line in outgoing {
+        if stream.write_all(line.as_bytes()).is_err() {
+            // Fails only when the socket is already closed, which is the goal.
+            let _ = stream.shutdown(Shutdown::Both);
+            return;
+        }
     }
 }
 
@@ -307,16 +325,11 @@ impl Shared {
             }
             match incoming {
                 Ok(stream) => self.register(stream),
-                Err(error)
-                    if matches!(
-                        error.kind(),
-                        io::ErrorKind::ConnectionAborted | io::ErrorKind::Interrupted
-                    ) => {}
-                // is_running() turns false so the app can see the server died.
-                Err(_) => break,
+                // Out of file descriptors or buffers is transient: wait for
+                // clients to leave instead of ending the server for good.
+                Err(_) => thread::sleep(ACCEPT_RETRY_DELAY),
             }
         }
-        lock(&self.state).running = false;
     }
 
     /// Runs on the accept thread, so it must not call the host.
@@ -324,6 +337,16 @@ impl Shared {
         let (Ok(writer), Ok(reader)) = (stream.try_clone(), stream.try_clone()) else {
             return;
         };
+        if writer.set_write_timeout(Some(WRITE_TIMEOUT)).is_err() {
+            return;
+        }
+        let (outgoing, queue) = sync_channel(OUTGOING_QUEUE_LEN);
+        let spawned_writer = thread::Builder::new()
+            .name("bamboo-agent-writer".into())
+            .spawn(move || write_loop(writer, queue));
+        if spawned_writer.is_err() {
+            return;
+        }
         let connected_at_ms = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .map(|elapsed| elapsed.as_millis() as i64)
@@ -340,7 +363,7 @@ impl Shared {
             seq,
             client_id: client_id.clone(),
             socket: stream,
-            writer: Mutex::new(writer),
+            outgoing,
             client: Mutex::new(AgentClient {
                 id: client_id,
                 name: String::new(),
