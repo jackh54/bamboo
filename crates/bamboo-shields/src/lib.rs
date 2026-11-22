@@ -122,7 +122,8 @@ pub struct Shields {
 impl Shields {
     /// Opens the shields state in `state_dir` (list catalog, downloaded list
     /// text, last build). On first run, list text is seeded from
-    /// `bundled_lists_dir` when given (lists shipped in the app bundle).
+    /// `bundled_lists_dir` when given: the app bundle ships `<list id>.txt` for
+    /// each built-in list plus `resources.json`, fetched at release time.
     #[uniffi::constructor]
     pub fn open(
         state_dir: String,
@@ -182,6 +183,24 @@ impl Shields {
     /// Call [`Shields::rebuild`] afterwards to apply it.
     pub fn update_list(&self, id: String, text: String, now_ms: i64) -> Result<u32, ShieldsError> {
         let _ = (id, text, now_ms); // STUB(phase1)
+        Ok(0)
+    }
+
+    /// Where to download scriptlet and redirect resources (Brave's adblock-resources JSON).
+    pub fn resources_url(&self) -> String {
+        "https://raw.githubusercontent.com/brave/adblock-resources/master/dist/resources.json".into() // STUB(phase1)
+    }
+
+    /// Resources were never downloaded or are older than `max_age_ms`.
+    pub fn resources_stale(&self, max_age_ms: i64, now_ms: i64) -> bool {
+        let _ = (max_age_ms, now_ms); // STUB(phase1)
+        false
+    }
+
+    /// Stores downloaded resources JSON (rejecting anything that doesn't parse).
+    /// Takes effect at the next [`Shields::rebuild`]. Returns the resource count.
+    pub fn update_resources(&self, json: String, now_ms: i64) -> Result<u32, ShieldsError> {
+        let _ = (json, now_ms); // STUB(phase1)
         Ok(0)
     }
 
