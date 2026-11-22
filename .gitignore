@@ -1,0 +1,22 @@
+# Rust
+/target/
+
+# Xcode (the project is generated from app/project.yml by XcodeGen)
+/app/Bamboo.xcodeproj/
+/app/Bamboo/Generated/
+/build/
+DerivedData/
+*.xcuserstate
+xcuserdata/
+
+# Filter lists bundled at release time
+/app/Bamboo/Resources/FilterLists/
+
+# Release artefacts
+/dist/
+*.dmg
+*.p12
+*.p8
+
+.DS_Store
+.env

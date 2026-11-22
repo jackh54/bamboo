@@ -1,0 +1,14 @@
+[package]
+name = "bamboo-mcp"
+description = "stdio MCP bridge: connects an MCP client to a running Bamboo browser."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[[bin]]
+name = "bamboo-mcp"
+path = "src/main.rs"
+
+[lints]
+workspace = true

@@ -1,0 +1,35 @@
+[workspace]
+resolver = "3"
+members = ["crates/*"]
+
+[workspace.package]
+version = "0.1.0" # x-release-please-version
+edition = "2024"
+license = "MIT"
+repository = "https://github.com/jackh54/bamboo"
+rust-version = "1.85"
+publish = false
+
+[workspace.dependencies]
+uniffi = "0.32"
+thiserror = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+rusqlite = { version = "0.43", features = ["bundled"] }
+tempfile = "3"
+
+[workspace.lints.rust]
+unsafe_code = "deny"
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+
+[profile.release]
+lto = "thin"
+debug = "line-tables-only"
+
+# Used by CI for shipped builds.
+[profile.dist]
+inherits = "release"
+lto = "fat"
+codegen-units = 1

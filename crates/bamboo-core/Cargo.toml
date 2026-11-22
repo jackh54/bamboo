@@ -1,0 +1,20 @@
+[package]
+name = "bamboo-core"
+description = "Static library that links every Bamboo Rust component into the macOS app."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[lib]
+crate-type = ["staticlib", "lib"]
+
+[dependencies]
+uniffi.workspace = true
+bamboo-agent = { path = "../bamboo-agent" }
+bamboo-import = { path = "../bamboo-import" }
+bamboo-shields = { path = "../bamboo-shields" }
+bamboo-store = { path = "../bamboo-store" }
+
+[lints]
+workspace = true

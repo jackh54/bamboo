@@ -1,0 +1,20 @@
+[package]
+name = "bamboo-shields"
+description = "Ad and tracker blocking built on Brave's adblock-rust engine."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+uniffi.workspace = true
+thiserror.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+adblock = { version = "0.13", features = ["content-blocking"] }
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[lints]
+workspace = true
