@@ -25,7 +25,8 @@ final class AppServices {
 
     private init() {}
 
-    func start() {
+    /// `openEmptyWindow` is false when launch has links to open; they bring their own window.
+    func start(openEmptyWindow: Bool) {
         tabExtensions = [
             HistoryTabExtension(),
             FaviconLoader.shared,
@@ -40,7 +41,7 @@ final class AppServices {
         applyAppearance()
 
         let restored = settings.startupBehavior == .restoreSession && windows.restoreSession()
-        if !restored {
+        if !restored && openEmptyWindow {
             windows.newWindow()
         }
         startHibernation()

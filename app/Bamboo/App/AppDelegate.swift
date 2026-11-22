@@ -8,13 +8,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.mainMenu = MainMenu.build()
     }
 
+    /// Links macOS hands over before launch finishes (it does that first when a click
+    /// launches Bamboo); nil once launched. Opened after services start, so they don't
+    /// race the startup window or miss the tab extensions.
+    private var urlsBeforeLaunch: [URL]? = []
+
     func applicationDidFinishLaunching(_ notification: Notification) {
-        services.start()
+        let urls = urlsBeforeLaunch ?? []
+        urlsBeforeLaunch = nil
+        services.start(openEmptyWindow: urls.isEmpty)
+        urls.forEach(services.windows.open)
     }
 
     func application(_ application: NSApplication, open urls: [URL]) {
-        for url in urls {
-            services.windows.open(url)
+        if urlsBeforeLaunch != nil {
+            urlsBeforeLaunch?.append(contentsOf: urls)
+        } else {
+            urls.forEach(services.windows.open)
         }
     }
 
