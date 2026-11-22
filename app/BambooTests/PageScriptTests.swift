@@ -40,25 +40,6 @@ final class PageScriptTests: XCTestCase {
         XCTFail("Timed out")
     }
 
-    func testRequestsScriptReportsReferencedResources() async throws {
-        let html = """
-            <html><head><link rel="stylesheet" href="https://cdn.example/site.css"></head>
-            <body><img src="https://ads.example/pixel.gif"><script src="https://tracker.example/t.js"></script>
-            <iframe src="https://frames.example/ad.html"></iframe><a href="https://example.com">not a resource</a></body></html>
-            """
-        let webView = webView(script: "shields-requests", world: .world(name: "Test"), handler: "bambooShieldsRequests", html: html)
-        try await waitUntil { recorder.messages.flatMap { $0["requests"] as? [[String: String]] ?? [] }.count >= 4 }
-        let requests = recorder.messages.flatMap { $0["requests"] as? [[String: String]] ?? [] }
-        let byURL = Dictionary(uniqueKeysWithValues: requests.map { ($0["url"]!, $0["type"]!) })
-        XCTAssertEqual(byURL, [
-            "https://cdn.example/site.css": "stylesheet",
-            "https://ads.example/pixel.gif": "image",
-            "https://tracker.example/t.js": "script",
-            "https://frames.example/ad.html": "subdocument",
-        ])
-        _ = webView
-    }
-
     func testHideScriptHidesTheSelectorsNativeReturns() async throws {
         recorder.reply = ["#sponsor", ".promo"]
         let html = #"<html><body><div id="sponsor">ad</div><p class="promo text">ad</p><p class="story">news</p></body></html>"#

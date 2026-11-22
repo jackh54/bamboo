@@ -1,17 +1,15 @@
 import WebKit
 
 /// Applies shields to every tab: the network rule lists, per-page cosmetic filtering and
-/// scriptlets, generic element hiding, the blocked-request count, and per-site JavaScript
-/// and Lockdown Mode.
+/// scriptlets, generic element hiding, and per-site JavaScript and Lockdown Mode. The
+/// blocked-request count comes from WebKit (see `TabWebViewDelegate`).
 @MainActor
 final class ShieldsTabExtension: NSObject, TabExtension, WKScriptMessageHandlerWithReply {
     /// Shields' own scripts run in an isolated world, so pages can't see them or post to their handlers.
     private static let world = WKContentWorld.world(name: "BambooShields")
     private static let hideHandler = "bambooShieldsHide"
-    private static let requestsHandler = "bambooShieldsRequests"
-    /// Upper bounds on one message, matching the batch sizes the scripts send.
+    /// Upper bound on one message, matching the batch size the script sends.
     private static let maxNames = 5000
-    private static let maxRequests = 500
 
     private struct Page {
         let url: URL
@@ -21,8 +19,6 @@ final class ShieldsTabExtension: NSObject, TabExtension, WKScriptMessageHandlerW
 
     private let genericHidingScript = WKUserScript(
         bundled: "shields-hide", injectionTime: .atDocumentEnd, forMainFrameOnly: true, in: ShieldsTabExtension.world)
-    private let requestsScript = WKUserScript(
-        bundled: "shields-requests", injectionTime: .atDocumentStart, forMainFrameOnly: false, in: ShieldsTabExtension.world)
     /// The cosmetic script of each controller's latest page. Keyed by controller, not tab,
     /// because popups share their opener's controller.
     private let cosmeticScripts = NSMapTable<WKUserContentController, WKUserScript>.weakToStrongObjects()
@@ -35,9 +31,7 @@ final class ShieldsTabExtension: NSObject, TabExtension, WKScriptMessageHandlerW
         let controller = configuration.userContentController
         shields.ruleLists.forEach(controller.add)
         controller.addUserScript(genericHidingScript)
-        controller.addUserScript(requestsScript)
         controller.addScriptMessageHandler(self, contentWorld: Self.world, name: Self.hideHandler)
-        controller.addScriptMessageHandler(self, contentWorld: Self.world, name: Self.requestsHandler)
     }
 
     func decidePolicy(for action: WKNavigationAction, preferences: WKWebpagePreferences, in tab: Tab) async -> NavigationPolicy {
@@ -129,52 +123,12 @@ final class ShieldsTabExtension: NSObject, TabExtension, WKScriptMessageHandlerW
             guard !page.generichide else { return replyHandler(nil, nil) }
             replyHandler(shields.engine.hiddenSelectors(classes: classes, ids: ids, exceptions: page.exceptions), nil)
 
-        case Self.requestsHandler:
-            guard let entries = body["requests"] as? [[String: Any]], entries.count <= Self.maxRequests
-            else { return replyHandler(nil, "Malformed requests message") }
-            let requests = entries.compactMap { entry -> ObservedRequest? in
-                guard let url = entry["url"] as? String, let type = (entry["type"] as? String).flatMap(Self.requestType)
-                else { return nil }
-                return ObservedRequest(url: url, requestType: type)
-            }
-            guard requests.count == entries.count else { return replyHandler(nil, "Malformed request entry") }
-            record(shields.engine.checkRequests(pageUrl: page.url.absoluteString, requests: requests), in: tab)
-            replyHandler(nil, nil)
 
         default:
             replyHandler(nil, "Unknown handler \(message.name)")
         }
     }
 
-    private func record(_ blocked: [BlockedRequest], in tab: Tab) {
-        guard !blocked.isEmpty else { return }
-        tab.blockedRequestCount += blocked.count
-        tab.blockedHosts.formUnion(blocked.map(\.host))
-        // Which trackers a private page met would hint at where the user went.
-        guard !tab.isPrivate else { return }
-        let now = Int64(Date.now.timeIntervalSince1970 * 1000)
-        for (host, requests) in Dictionary(grouping: blocked, by: \.host) {
-            do {
-                try tab.profile.store.recordBlocked(trackerHost: host, count: UInt32(requests.count), atMs: now)
-            } catch {
-                AppServices.shared.reportNonFatal(error, "Recording blocked requests")
-            }
-        }
-    }
-
-    private static func requestType(_ name: String) -> RequestType? {
-        switch name {
-        case "subdocument": .subdocument
-        case "script": .script
-        case "stylesheet": .stylesheet
-        case "image": .image
-        case "font": .font
-        case "media": .media
-        case "xhr": .xhr
-        case "other": .other
-        default: nil
-        }
-    }
 }
 
 /// What shields do on one site: the Shields defaults in Settings combined with the site's

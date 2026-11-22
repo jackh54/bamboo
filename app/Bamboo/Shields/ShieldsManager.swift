@@ -110,6 +110,21 @@ final class ShieldsManager {
         lastError = failures.isEmpty ? nil : failures.joined(separator: "\n")
     }
 
+    /// Counts a request one of our rule lists stopped, for the Shields badge and the new tab
+    /// page's stats. Private tabs only count on the tab: which trackers a private page met
+    /// would hint at where the user went.
+    func recordBlockedLoad(of url: URL, in tab: Tab) {
+        guard let host = url.host() else { return }
+        tab.blockedRequestCount += 1
+        tab.blockedHosts.insert(host)
+        guard !tab.isPrivate else { return }
+        do {
+            try tab.profile.store.recordBlocked(trackerHost: host, count: 1, atMs: Int64(Date.now.timeIntervalSince1970 * 1000))
+        } catch {
+            AppServices.shared.reportNonFatal(error, "Recording a blocked request")
+        }
+    }
+
     // MARK: - Catalog changes from Settings
 
     func setList(_ id: String, enabled: Bool) throws {

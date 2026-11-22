@@ -73,6 +73,18 @@ final class TabWebViewDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
         AppServices.shared.downloads.track(download)
     }
 
+    /// WebKit's private callback for content blocker actions (WKNavigationDelegatePrivate),
+    /// the one Safari's tracker count uses. Blocked requests never reach the page, so this
+    /// is the only exact count. `action` is a `_WKContentRuleListAction`.
+    @objc(_webView:contentRuleListWithIdentifier:performedAction:forURL:)
+    func webView(_ webView: WKWebView, contentRuleListWithIdentifier identifier: String, performedAction action: NSObject, for url: URL) {
+        guard identifier.hasPrefix(ShieldsManager.ruleListPrefix),
+              action.responds(to: NSSelectorFromString("blockedLoad")),
+              action.value(forKey: "blockedLoad") as? Bool == true
+        else { return }
+        AppServices.shared.shields.recordBlockedLoad(of: url, in: tab)
+    }
+
     // MARK: - Navigation progress
 
     func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
