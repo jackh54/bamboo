@@ -6,12 +6,21 @@ import SwiftUI
 struct ImportView: View {
     @Bindable var model: ImportModel
     @Environment(\.dismiss) private var dismiss
-    @State private var targetProfileID: Profile.ID?
+    @State private var chosenDestination: ImportModel.Destination?
 
     private var profiles: ProfileManager { AppServices.shared.profiles }
 
-    private var targetProfile: Profile {
-        targetProfileID.flatMap(profiles.profile(id:)) ?? profiles.defaultProfile
+    /// Several profiles go into separate Bamboo profiles unless the user picks one.
+    private var destination: ImportModel.Destination {
+        let separate = model.selectedSources.count > 1
+        switch chosenDestination {
+        case .matchingProfiles? where separate:
+            return .matchingProfiles
+        case .profile(let id)? where profiles.profile(id: id) != nil:
+            return .profile(id)
+        default:
+            return separate ? .matchingProfiles : .profile(profiles.defaultProfile.id)
+        }
     }
 
     var body: some View {
@@ -117,9 +126,18 @@ struct ImportView: View {
                 }
                 .padding(.leading, 2)
 
-                if profiles.profiles.count > 1 {
-                    Picker("Import into", selection: Binding { targetProfile.id } set: { targetProfileID = $0 }) {
-                        ForEach(profiles.profiles) { Text($0.name).tag($0.id) }
+                if model.selectedSources.count > 1 || profiles.profiles.count > 1 {
+                    Picker("Import into", selection: Binding { destination } set: { chosenDestination = $0 }) {
+                        if model.selectedSources.count > 1 {
+                            Text("A separate profile for each").tag(ImportModel.Destination.matchingProfiles)
+                        }
+                        ForEach(profiles.profiles) { Text($0.name).tag(ImportModel.Destination.profile($0.id)) }
+                    }
+                    if destination == .matchingProfiles {
+                        Text("Each \(browser.name) profile goes into the Bamboo profile with the same name. Bamboo creates the ones you don’t have.")
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
                 }
 
@@ -138,7 +156,8 @@ struct ImportView: View {
                     .keyboardShortcut(.cancelAction)
                 Button("Import") {
                     let sources = model.selectedSources
-                    Task { await model.run(sources, into: targetProfile) }
+                    let destination = destination
+                    Task { await model.run(sources, into: destination) }
                 }
                 .keyboardShortcut(.defaultAction)
                 .disabled(!model.canImport)

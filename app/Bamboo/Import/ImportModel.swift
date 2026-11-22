@@ -43,6 +43,14 @@ final class ImportModel {
         case finished(ImportSummary)
     }
 
+    /// Where an import goes.
+    enum Destination: Hashable {
+        /// Each source profile into the Bamboo profile with its name, created when missing,
+        /// so profiles stay separate as they were in the other browser.
+        case matchingProfiles
+        case profile(Profile.ID)
+    }
+
     /// A browser Bamboo can read, with its profiles in the order they were found.
     struct Browser: Identifiable {
         let kind: BrowserKind
@@ -120,11 +128,14 @@ final class ImportModel {
     /// Imports each selected kind of each profile on its own, so one that fails (the user
     /// denies Keychain access, say) doesn't stop the others. The run shares one session,
     /// so macOS asks for the browser's Keychain key once.
-    func run(_ sources: [SourceProfile], into profile: Profile) async {
+    func run(_ sources: [SourceProfile], into destination: Destination) async {
         guard let first = sources.first else {
             preconditionFailure("Import started with no profiles")
         }
         let namesProfiles = sources.count > 1
+        // Separate profiles each get their own "Imported from Brave" folder.
+        let foldersNameProfile = namesProfiles && destination != .matchingProfiles
+        var profile = AppServices.shared.profiles.defaultProfile
         let steps = sources.flatMap { source in
             Self.kindOrder.filter { kinds.contains($0) && source.kinds.contains($0) }.map { (source, $0) }
         }
@@ -134,6 +145,7 @@ final class ImportModel {
             phase = .importing(kind, profileName: namesProfiles ? source.profileName : nil, step: index + 1, of: steps.count)
             if summary.profiles.last?.profileDir != source.profileDir {
                 summary.profiles.append(.init(profileDir: source.profileDir, profileName: source.profileName))
+                profile = Self.profile(for: source, in: destination)
             }
             let result: ImportSummary.Result
             do {
@@ -142,7 +154,7 @@ final class ImportModel {
                     try session.importProfile(profile: source, request: request)
                 }.value
                 summary.warnings += bundle.warnings.map { namesProfiles ? "\(source.profileName): \($0)" : $0 }
-                let detail = try await apply(kind, from: bundle, into: profile, namingProfile: namesProfiles, summary: &summary)
+                let detail = try await apply(kind, from: bundle, into: profile, namingProfile: foldersNameProfile, summary: &summary)
                 result = .init(kind: kind, detail: detail, succeeded: true)
             } catch {
                 if case ImportError.PermissionDenied = error {
@@ -153,6 +165,19 @@ final class ImportModel {
             summary.profiles[summary.profiles.count - 1].results.append(result)
         }
         phase = .finished(summary)
+    }
+
+    private static func profile(for source: SourceProfile, in destination: Destination) -> Profile {
+        let profiles = AppServices.shared.profiles
+        switch destination {
+        case .matchingProfiles:
+            return profiles.profile(named: source.profileName)
+        case .profile(let id):
+            guard let profile = profiles.profile(id: id) else {
+                preconditionFailure("The import's target profile \(id) no longer exists")
+            }
+            return profile
+        }
     }
 
     func finish() {

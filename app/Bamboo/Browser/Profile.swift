@@ -66,6 +66,11 @@ final class ProfileManager {
         profiles.first { $0.id == id }
     }
 
+    /// The profile called `name`, created when there isn't one.
+    func profile(named name: String) -> Profile {
+        profiles.first { $0.name == name } ?? createProfile(name: name, symbol: "person.crop.circle")
+    }
+
     @discardableResult
     func createProfile(name: String, symbol: String) -> Profile {
         let profile = Profile(record: ProfileRecord(id: UUID(), name: name, symbol: symbol, isDefault: false))
