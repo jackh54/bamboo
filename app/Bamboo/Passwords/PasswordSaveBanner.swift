@@ -1,6 +1,7 @@
 import SwiftUI
 
-/// Offer to save the credentials in `tab.passwordSaveOffer`, shown above the page.
+/// Offer to save the credentials in `tab.passwordSaveOffer`, shown above the page. The login
+/// is saved for the origin the page submitted from, whatever the tab shows by then.
 struct PasswordSaveBanner: View {
     let tab: Tab
     @State private var replacesSavedPassword = false
@@ -15,16 +16,18 @@ struct PasswordSaveBanner: View {
                     .frame(width: 30, height: 30)
                     .background(Theme.palette(.bamboo).accent, in: .rect(cornerRadius: 7))
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(replacesSavedPassword ? "Update the saved password for \(offer.host)?" : "Save password for \(offer.host)?")
+                    Text(replacesSavedPassword
+                         ? "Update the saved password for \(Self.site(offer.login))?"
+                         : "Save password for \(Self.site(offer.login))?")
                         .font(.headline)
-                    Text(errorMessage ?? (offer.username.isEmpty ? "No username" : offer.username))
+                    Text(errorMessage ?? (offer.login.username.isEmpty ? "No username" : offer.login.username))
                         .font(.subheadline)
                         .foregroundStyle(errorMessage == nil ? Color.secondary : Color.red)
                         .lineLimit(2)
                 }
                 Spacer(minLength: 12)
                 Button("Never for This Site") {
-                    AppServices.shared.settings.neverSavePasswordHosts.append(offer.host)
+                    AppServices.shared.settings.neverSavePasswordHosts.append(offer.login.host)
                     tab.passwordSaveOffer = nil
                 }
                 Button("Not Now") {
@@ -45,37 +48,26 @@ struct PasswordSaveBanner: View {
         }
     }
 
-    /// The offer only names the host, so the scheme and port come from the page when it is still on that host.
-    private func login(for offer: PasswordSaveOffer) -> SavedLogin? {
-        var components = URLComponents()
-        components.scheme = "https"
-        components.host = offer.host
-        if let page = tab.url, page.host() == offer.host {
-            components.scheme = page.scheme
-            components.port = page.port
-        }
-        return components.url.flatMap { SavedLogin(origin: $0, username: offer.username) }
+    /// The host alone for an ordinary HTTPS site; the full origin when it is plain HTTP or
+    /// uses another port, so the user sees exactly where the password will be used.
+    private static func site(_ login: SavedLogin) -> String {
+        login.isSecure && login.port == nil ? login.host : login.origin
     }
 
     private func check(_ offer: PasswordSaveOffer) {
         errorMessage = nil
-        guard let login = login(for: offer) else { return }
         do {
             replacesSavedPassword = try AppServices.shared.passwords
-                .logins(forHost: login.host, isSecure: login.isSecure)
-                .contains { $0.username == login.username && $0.port == login.port }
+                .logins(forHost: offer.login.host, isSecure: offer.login.isSecure)
+                .contains { $0.username == offer.login.username && $0.port == offer.login.port }
         } catch {
             errorMessage = "Couldn't read saved passwords: \(error.localizedDescription)"
         }
     }
 
     private func save(_ offer: PasswordSaveOffer) {
-        guard let login = login(for: offer) else {
-            errorMessage = "Passwords can only be saved for websites."
-            return
-        }
         do {
-            try AppServices.shared.passwords.save(login, password: offer.password)
+            try AppServices.shared.passwords.save(offer.login, password: offer.password)
             tab.passwordSaveOffer = nil
         } catch {
             errorMessage = "Couldn't save the password: \(error.localizedDescription)"

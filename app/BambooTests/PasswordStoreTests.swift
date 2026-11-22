@@ -110,6 +110,19 @@ final class PasswordStoreTests: XCTestCase {
         XCTAssertEqual(lines[2], #"\#(server),https://\#(server),"jack, the second","say ""hi""""#)
     }
 
+    func testExportFileIsPrivateAndReplacesAnOldOne() throws {
+        try store.save(login("amy"), password: "plain")
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("bamboo-export-\(UUID().uuidString).csv")
+        defer { try? FileManager.default.removeItem(at: url) }
+        try Data("old".utf8).write(to: url)
+
+        try store.exportCSV(to: url)
+
+        let permissions = try FileManager.default.attributesOfItem(atPath: url.path)[.posixPermissions] as? Int
+        XCTAssertEqual(permissions, 0o600)
+        XCTAssertEqual(try String(contentsOf: url, encoding: .utf8), try store.exportCSV())
+    }
+
     func testSaveNewAddsMissingLogins() throws {
         let added = try store.saveNew([(login("a"), "1"), (login("b"), "2"), (login("c"), "3")])
         XCTAssertEqual(added, 3)

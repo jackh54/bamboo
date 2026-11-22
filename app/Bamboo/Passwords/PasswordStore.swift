@@ -127,6 +127,21 @@ final class PasswordStore {
         return lines.joined(separator: "\n") + "\n"
     }
 
+    /// Writes `exportCSV()` to a new file only the user can read. The file is created with
+    /// mode 0600, so it is never readable by others, even for a moment.
+    func exportCSV(to url: URL) throws {
+        let csv = try exportCSV()
+        // The save panel already confirmed replacing an existing file.
+        if FileManager.default.fileExists(atPath: url.path) {
+            try FileManager.default.removeItem(at: url)
+        }
+        let descriptor = open(url.path, O_WRONLY | O_CREAT | O_EXCL, 0o600)
+        guard descriptor >= 0 else { throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno)) }
+        let handle = FileHandle(fileDescriptor: descriptor, closeOnDealloc: true)
+        try handle.write(contentsOf: Data(csv.utf8))
+        try handle.close()
+    }
+
     /// Asks for Touch ID or the user's Mac password. Throws `LAError.userCancel` when they decline.
     static func authenticate(reason: String) async throws {
         let context = LAContext()
