@@ -31,6 +31,9 @@ final class BrowserWindowModel: Identifiable {
     var libraryPanel: LibraryPanel?
     /// Incremented to ask the address bar to take keyboard focus.
     var addressBarFocusRequest = 0
+    /// Text for the Claude panel to send next (from the address bar or a context
+    /// menu). The panel opens, sends it and sets this back to nil.
+    var pendingAssistantPrompt: String?
 
     struct ClosedTab {
         let state: TabSessionState

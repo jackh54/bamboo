@@ -9,6 +9,12 @@ struct PageLoadError: Equatable, Sendable {
     var message: String
 }
 
+struct PasswordSaveOffer: Equatable, Sendable {
+    var host: String
+    var username: String
+    var password: String
+}
+
 /// What session restore saves for a tab.
 struct TabSessionState: Codable, Sendable {
     var id: UUID
@@ -53,6 +59,8 @@ final class Tab: Identifiable {
     var isReaderActive = false
     /// A JavaScript dialog the page is waiting on, rendered over the page.
     var pendingDialog: JavaScriptDialog?
+    /// Credentials the page just submitted that the user hasn't saved yet.
+    var passwordSaveOffer: PasswordSaveOffer?
     /// Why the last main-frame load failed; cleared when the next one starts.
     var loadError: PageLoadError?
 
