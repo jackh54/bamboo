@@ -16,6 +16,18 @@ final class ProfileManagerTests: XCTestCase {
         try await manager.deleteProfile(created)
     }
 
+    func testProfilesMadeOneAfterAnotherGetDifferentWindowColours() async throws {
+        let manager = ProfileManager()
+        let first = manager.createProfile(name: "Colour \(UUID().uuidString)", symbol: "person.crop.circle")
+        let second = manager.createProfile(name: "Colour \(UUID().uuidString)", symbol: "person.crop.circle")
+
+        XCTAssertNotEqual(manager.tint(for: first), manager.tint(for: second))
+        XCTAssertNotEqual(manager.tint(for: first), .graphite, "graphite is for private windows")
+
+        try await manager.deleteProfile(first)
+        try await manager.deleteProfile(second)
+    }
+
     func testEachProfileHasItsOwnPasswordsAndDeletingItRemovesThem() async throws {
         let manager = ProfileManager()
         let profile = manager.createProfile(name: "Passwords \(UUID().uuidString)", symbol: "person.crop.circle")

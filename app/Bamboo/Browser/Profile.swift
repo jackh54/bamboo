@@ -71,6 +71,16 @@ final class ProfileManager {
         profiles.first { $0.id == id }
     }
 
+    /// The colour of a new window for `profile`. Each profile gets a different one, in the
+    /// order they were made, so their windows can be told apart.
+    func tint(for profile: Profile) -> SpaceTint {
+        guard let index = profiles.firstIndex(where: { $0 === profile }) else {
+            preconditionFailure("\(profile.name) isn't one of the profiles")
+        }
+        let tints = SpaceTint.allCases.filter { $0 != .graphite }
+        return tints[index % tints.count]
+    }
+
     /// The profile called `name`, created when there isn't one.
     func profile(named name: String) -> Profile {
         profiles.first { $0.name == name } ?? createProfile(name: name, symbol: "person.crop.circle")

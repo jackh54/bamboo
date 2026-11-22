@@ -13,6 +13,8 @@ final class WindowManagerTests: XCTestCase {
         let model = try XCTUnwrap(services.windows.models.last)
         XCTAssertTrue(model.selectedSpace.profile === profile)
         XCTAssertFalse(model.isPrivate)
+        XCTAssertEqual(model.selectedSpace.tint, services.profiles.tint(for: profile))
+        XCTAssertEqual(services.windows.controller(for: model)?.window?.title, "Bamboo — \(profile.name)")
 
         services.windows.showWindow(for: profile)
         XCTAssertEqual(services.windows.controllers.count, windowCount + 1)

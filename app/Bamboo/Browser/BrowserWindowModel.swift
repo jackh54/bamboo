@@ -54,8 +54,8 @@ final class BrowserWindowModel: Identifiable {
     convenience init(profile: Profile, isPrivate: Bool) {
         let space = Space(
             name: isPrivate ? "Private" : profile.name,
-            symbol: isPrivate ? "eye.slash" : "leaf",
-            tint: isPrivate ? .graphite : .bamboo,
+            symbol: isPrivate ? "eye.slash" : profile.isDefault ? "leaf" : profile.symbol,
+            tint: isPrivate ? .graphite : AppServices.shared.profiles.tint(for: profile),
             profile: profile)
         self.init(isPrivate: isPrivate, spaces: [space], selectedSpaceID: space.id)
     }

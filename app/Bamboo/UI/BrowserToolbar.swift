@@ -340,6 +340,10 @@ private struct SpaceAvatarMenu: View {
     let model: BrowserWindowModel
     @State private var editorTarget: SpaceEditorTarget?
 
+    private var showsProfileName: Bool {
+        !model.isPrivate && AppServices.shared.profiles.profiles.count > 1
+    }
+
     var body: some View {
         let space = model.selectedSpace
         let palette = Theme.palette(space.tint)
@@ -380,17 +384,28 @@ private struct SpaceAvatarMenu: View {
                     }
                 }))
         } label: {
-            Image(systemName: space.symbol)
-                .font(.system(size: 10.5, weight: .semibold))
-                .foregroundStyle(.white)
-                .frame(width: 22, height: 22)
-                .background(LinearGradient(colors: palette.gradient, startPoint: .topLeading, endPoint: .bottomTrailing),
-                            in: Circle())
+            HStack(spacing: 6) {
+                Image(systemName: space.symbol)
+                    .font(.system(size: 10.5, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .frame(width: 22, height: 22)
+                    .background(LinearGradient(colors: palette.gradient, startPoint: .topLeading, endPoint: .bottomTrailing),
+                                in: Circle())
+                // Chrome and Brave name the profile on the avatar once several are in use.
+                if showsProfileName {
+                    Text(space.profile.name)
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
+                        .frame(maxWidth: 120)
+                        .padding(.trailing, 4)
+                }
+            }
         }
         .menuStyle(.button)
         .menuIndicator(.hidden)
         .fixedSize()
-        .help("\(space.name) space")
+        .help(showsProfileName ? "\(space.profile.name) profile, \(space.name) space" : "\(space.name) space")
         .sheet(item: $editorTarget) { target in
             SpaceEditor(model: model, target: target)
         }

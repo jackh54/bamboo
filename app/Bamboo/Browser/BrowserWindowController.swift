@@ -24,13 +24,13 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         window.titlebarSeparatorStyle = .none
         window.minSize = NSSize(width: 640, height: 420)
         window.isReleasedWhenClosed = false
-        window.title = model.isPrivate ? "Private Browsing" : "Bamboo"
         let hostingView = NSHostingView(rootView: BrowserWindowView(model: model))
         // The window, not the SwiftUI content, decides the window's size.
         hostingView.sizingOptions = []
         window.contentView = hostingView
         super.init(window: window)
         window.delegate = self
+        updateTitle()
         // Esc goes to the page while it has focus, and pages rarely use it, so
         // the window watches for it to close the panel over the page.
         escapeMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
@@ -54,6 +54,22 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     private var tab: Tab? { model.selectedTab }
     private var escapeMonitor: Any?
     private nonisolated static let escapeKeyCode: UInt16 = 53
+
+    /// The title the Window menu and Mission Control show. It names the profile once there
+    /// is more than one, as Chrome and Brave do.
+    private func updateTitle() {
+        withObservationTracking {
+            window?.title = if model.isPrivate {
+                "Private Browsing"
+            } else if AppServices.shared.profiles.profiles.count > 1 {
+                "Bamboo — \(model.selectedSpace.profile.name)"
+            } else {
+                "Bamboo"
+            }
+        } onChange: { [weak self] in
+            Task { @MainActor in self?.updateTitle() }
+        }
+    }
 
     // MARK: - NSWindowDelegate
 
