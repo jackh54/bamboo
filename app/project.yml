@@ -38,8 +38,8 @@ targets:
     info:
       path: Bamboo/Resources/Info.plist
       properties:
-        CFBundleDisplayName: Bamboo
-        CFBundleName: Bamboo
+        CFBundleDisplayName: $(BAMBOO_APP_NAME)
+        CFBundleName: $(BAMBOO_APP_NAME)
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         LSApplicationCategoryType: public.app-category.productivity
@@ -80,6 +80,7 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: dev.pandascript.Bamboo
         PRODUCT_NAME: Bamboo
+        BAMBOO_APP_NAME: Bamboo
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         ENABLE_HARDENED_RUNTIME: YES
         SWIFT_INCLUDE_PATHS: $(SRCROOT)/../target/bamboo-out/include
@@ -87,6 +88,13 @@ targets:
         OTHER_LDFLAGS: [-lbamboo_core]
         SWIFT_STRICT_CONCURRENCY: complete
         INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.productivity
+      configs:
+        # A debug build sharing the release bundle ID can be picked by Launch Services
+        # in place of the installed app, and it doesn't have the installed app's
+        # privacy permissions, such as Full Disk Access.
+        Debug:
+          PRODUCT_BUNDLE_IDENTIFIER: dev.pandascript.Bamboo.debug
+          BAMBOO_APP_NAME: Bamboo Dev
     preBuildScripts:
       - name: Build Rust core
         script: |
