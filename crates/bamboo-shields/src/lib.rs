@@ -2,9 +2,9 @@
 //!
 //! Network blocking runs inside WebKit: enabled filter lists are converted to
 //! WebKit content-rule-list JSON, which the app compiles with
-//! `WKContentRuleListStore`. The in-process engine handles what WebKit cannot:
-//! per-site cosmetic filtering, scriptlet injection, and classifying observed
-//! requests for the per-page "trackers blocked" report.
+//! `WKContentRuleListStore`. The in-process engine holds only cosmetic filters
+//! and handles what WebKit cannot: per-site cosmetic filtering and scriptlet
+//! injection.
 //!
 //! The app downloads list text itself (URLSession) and hands it over with
 //! [`Shields::update_list`]; this crate does no networking.
@@ -18,7 +18,6 @@ use std::sync::{Arc, Mutex, MutexGuard, RwLock};
 use adblock::Engine;
 use adblock::content_blocking::{CbRule, CbType};
 use adblock::lists::{FilterSet, ParseOptions, RuleTypes, parse_filters};
-use adblock::request::Request;
 use adblock::resources::Resource;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -95,38 +94,13 @@ pub struct CosmeticResources {
     pub exceptions: Vec<String>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
-pub enum RequestType {
-    Document,
-    Subdocument,
-    Script,
-    Stylesheet,
-    Image,
-    Font,
-    Media,
-    Xhr,
-    Websocket,
-    Ping,
-    Other,
-}
-
-/// A subresource request the page script saw.
-#[derive(Debug, Clone, PartialEq, uniffi::Record)]
-pub struct ObservedRequest {
-    pub url: String,
-    pub request_type: RequestType,
-}
-
-/// A request the engine would block, with the host it was sent to.
-#[derive(Debug, Clone, PartialEq, uniffi::Record)]
-pub struct BlockedRequest {
-    pub url: String,
-    pub host: String,
-}
-
 const CATALOG_JSON: &str = include_str!("../catalog.json");
 const RESOURCES_URL: &str =
     "https://raw.githubusercontent.com/brave/adblock-resources/master/dist/resources.json";
+
+/// Bump when what a build contains changes without the lists changing, so
+/// installs holding an older engine.dat rebuild it. 2: engine is cosmetic-only.
+const BUILD_FORMAT: &str = "2";
 
 const CATALOG_FILE: &str = "catalog.json";
 const CUSTOM_RULES_FILE: &str = "custom-rules.txt";
@@ -434,35 +408,6 @@ impl Shields {
         self.engine()
             .hidden_class_id_selectors(classes, ids, &exceptions)
     }
-
-    /// Which of the observed requests match a blocking rule on `page_url`.
-    pub fn check_requests(
-        &self,
-        page_url: String,
-        requests: Vec<ObservedRequest>,
-    ) -> Vec<BlockedRequest> {
-        let engine = self.engine();
-        requests
-            .into_iter()
-            .filter_map(|observed| {
-                // URLs the engine can't parse (`data:`, `blob:`) match no network rule.
-                let request = Request::new(
-                    &observed.url,
-                    &page_url,
-                    request_type_name(observed.request_type),
-                    "get",
-                )
-                .ok()?;
-                engine
-                    .check_network_request(&request)
-                    .should_block()
-                    .then_some(BlockedRequest {
-                        url: observed.url,
-                        host: request.hostname,
-                    })
-            })
-            .collect()
-    }
 }
 
 impl Shields {
@@ -526,9 +471,14 @@ impl Shields {
             unconvertible_rules: conversion.unconvertible_rules,
         };
 
+        // WebKit does all network blocking, so network filters would only cost memory here.
+        let cosmetic_only = ParseOptions {
+            rule_types: RuleTypes::CosmeticOnly,
+            ..ParseOptions::default()
+        };
         let mut filter_set = FilterSet::new(false);
         for text in texts {
-            filter_set.add_filter_list(text.into(), ParseOptions::default());
+            filter_set.add_filter_list(text.into(), cosmetic_only);
         }
         let mut engine = Engine::new_with_filter_set(filter_set);
         if let Some(json) = &resources_json {
@@ -636,6 +586,7 @@ fn fingerprint(lists: &[(String, String)], custom_rules: &str, resources: Option
         hasher.update(part);
     };
     add(env!("CARGO_PKG_VERSION"));
+    add(BUILD_FORMAT);
     for (id, text) in lists {
         add(id);
         add(text);
@@ -657,22 +608,6 @@ fn sorted(set: HashSet<String>) -> Vec<String> {
 
 fn is_stale(last_updated_ms: Option<i64>, max_age_ms: i64, now_ms: i64) -> bool {
     last_updated_ms.is_none_or(|updated| now_ms - updated > max_age_ms)
-}
-
-fn request_type_name(request_type: RequestType) -> &'static str {
-    match request_type {
-        RequestType::Document => "document",
-        RequestType::Subdocument => "subdocument",
-        RequestType::Script => "script",
-        RequestType::Stylesheet => "stylesheet",
-        RequestType::Image => "image",
-        RequestType::Font => "font",
-        RequestType::Media => "media",
-        RequestType::Xhr => "xhr",
-        RequestType::Websocket => "websocket",
-        RequestType::Ping => "ping",
-        RequestType::Other => "other",
-    }
 }
 
 /// Counts the filters in `text`, rejecting text with none.

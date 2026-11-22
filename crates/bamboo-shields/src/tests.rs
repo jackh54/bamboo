@@ -17,6 +17,8 @@ const PRIVACY_LIST: &str = "\
 ||metrics.example.io^
 ";
 
+const CUSTOM_RULES: &str = "||mine.example.com^\nmine.test##.mine-ad";
+
 const RESOURCES: &str = r#"[{"name":"noop.js","aliases":[],"kind":{"mime":"application/javascript"},"content":"Ly8gbm9vcA=="}]"#;
 
 const NOW_MS: i64 = 1_700_000_000_000;
@@ -53,18 +55,17 @@ fn all_rules(build: &ShieldsBuild) -> Vec<Value> {
         .collect()
 }
 
-fn blocked_hosts(shields: &Shields, page: &str, urls: &[&str]) -> Vec<String> {
-    let requests = urls
-        .iter()
-        .map(|url| ObservedRequest {
-            url: (*url).into(),
-            request_type: RequestType::Script,
-        })
-        .collect();
-    shields
-        .check_requests(page.into(), requests)
+/// The WebKit rules of `action_type` whose URL pattern mentions `target` (dots escaped as in the pattern).
+fn rules_for(build: &ShieldsBuild, action_type: &str, target: &str) -> Vec<Value> {
+    let escaped = target.replace('.', r"\.");
+    all_rules(build)
         .into_iter()
-        .map(|blocked| blocked.host)
+        .filter(|rule| {
+            rule["action"]["type"] == action_type
+                && rule["trigger"]["url-filter"]
+                    .as_str()
+                    .is_some_and(|filter| filter.contains(&escaped))
+        })
         .collect()
 }
 
@@ -207,18 +208,15 @@ fn rebuild_with_unchanged_inputs_returns_the_same_build() {
 #[test]
 fn custom_rules_are_applied() {
     let (_dir, shields) = fixture();
-    shields
-        .set_custom_rules("||mine.example.com^".into())
-        .expect("set");
-    assert_eq!(shields.custom_rules(), "||mine.example.com^");
-    shields.rebuild().expect("rebuild");
+    shields.set_custom_rules(CUSTOM_RULES.into()).expect("set");
+    assert_eq!(shields.custom_rules(), CUSTOM_RULES);
+    let build = shields.rebuild().expect("rebuild");
+    assert_eq!(rules_for(&build, "block", "mine.example.com").len(), 1);
     assert_eq!(
-        blocked_hosts(
-            &shields,
-            "https://news.test/",
-            &["https://mine.example.com/x.js"]
-        ),
-        ["mine.example.com"]
+        shields
+            .cosmetic_resources("https://mine.test/".into())
+            .hide_selectors,
+        [".mine-ad"]
     );
 }
 
@@ -250,43 +248,43 @@ fn hidden_selectors_for_a_generic_rule() {
 }
 
 #[test]
-fn check_requests_blocks_ads_and_respects_exceptions() {
+fn exceptions_become_ignore_previous_rules_after_the_blocking_rules() {
     let (_dir, shields) = fixture();
-    shields.rebuild().expect("rebuild");
-    let blocked = blocked_hosts(
-        &shields,
-        "https://news.test/",
-        &[
-            "https://ads.example.com/banner.js",
-            "https://ads.example.com/allowed/banner.js",
-            "https://cdn.news.test/app.js",
-            "data:text/plain,hello",
-        ],
+    let build = shields.rebuild().expect("rebuild");
+    assert_eq!(rules_for(&build, "block", "ads.example.com").len(), 1);
+    assert_eq!(
+        rules_for(&build, "ignore-previous-rules", "ads.example.com").len(),
+        1,
+        "the @@ rule for /allowed"
     );
-    assert_eq!(blocked, ["ads.example.com"]);
+    let rules: Vec<Value> = serde_json::from_str(&build.rule_sets[0].json).expect("json");
+    let position = |action: &str| {
+        rules
+            .iter()
+            .position(|rule| rule["action"]["type"] == action)
+    };
+    assert!(position("block") < position("ignore-previous-rules"));
 }
 
 #[test]
-fn check_requests_honours_the_third_party_option() {
+fn third_party_option_becomes_a_load_type() {
     let (_dir, shields) = fixture();
-    shields.rebuild().expect("rebuild");
-    let url = "https://tracker.example.net/t.js";
+    let build = shields.rebuild().expect("rebuild");
+    let rules = rules_for(&build, "block", "tracker.example.net");
+    assert_eq!(rules.len(), 1);
     assert_eq!(
-        blocked_hosts(&shields, "https://news.test/", &[url]),
-        ["tracker.example.net"]
+        rules[0]["trigger"]["load-type"],
+        serde_json::json!(["third-party"])
     );
-    assert!(blocked_hosts(&shields, "https://tracker.example.net/", &[url]).is_empty());
+    let plain = rules_for(&build, "block", "ads.example.com");
+    assert!(plain[0]["trigger"].get("load-type").is_none());
 }
 
 #[test]
 fn disabling_a_list_removes_its_rules() {
     let (_dir, shields) = fixture();
     let before = shields.rebuild().expect("rebuild");
-    let metrics = "https://metrics.example.io/p.js";
-    assert_eq!(
-        blocked_hosts(&shields, "https://news.test/", &[metrics]),
-        ["metrics.example.io"]
-    );
+    assert_eq!(rules_for(&before, "block", "metrics.example.io").len(), 1);
 
     shields
         .set_list_enabled("easyprivacy".into(), false)
@@ -294,7 +292,7 @@ fn disabling_a_list_removes_its_rules() {
     let after = shields.rebuild().expect("rebuild");
     assert_ne!(before.fingerprint, after.fingerprint);
     assert_eq!(after.network_rules, 3);
-    assert!(blocked_hosts(&shields, "https://news.test/", &[metrics]).is_empty());
+    assert!(rules_for(&after, "block", "metrics.example.io").is_empty());
     assert!(!after.rule_sets[0].json.contains("metrics"));
 }
 
@@ -435,7 +433,7 @@ fn state_survives_a_restart() {
         .update_resources(RESOURCES.into(), NOW_MS)
         .expect("resources");
     shields
-        .set_custom_rules("||mine.example.com^".into())
+        .set_custom_rules(CUSTOM_RULES.into())
         .expect("custom rules");
     let added = shields
         .add_custom_list("Mine".into(), "https://example.com/list.txt".into())
@@ -450,21 +448,16 @@ fn state_survives_a_restart() {
         Some(build.clone())
     );
     assert_eq!(reopened.lists(), lists);
-    assert_eq!(reopened.custom_rules(), "||mine.example.com^");
+    assert_eq!(reopened.custom_rules(), CUSTOM_RULES);
     assert!(reopened.lists().contains(&added));
     assert!(!reopened.resources_stale(DAY_MS, NOW_MS));
 
     // The engine comes back from its saved form, not from re-parsing lists.
     assert_eq!(
-        blocked_hosts(
-            &reopened,
-            "https://news.test/",
-            &[
-                "https://ads.example.com/a.js",
-                "https://mine.example.com/a.js"
-            ]
-        ),
-        ["ads.example.com", "mine.example.com"]
+        reopened
+            .cosmetic_resources("https://mine.test/".into())
+            .hide_selectors,
+        [".mine-ad"]
     );
     assert_eq!(
         reopened
@@ -489,12 +482,10 @@ fn open_recovers_when_the_saved_engine_is_unreadable() {
     let reopened = open_in(&dir);
     assert_eq!(reopened.current_build().expect("build"), Some(build));
     assert_eq!(
-        blocked_hosts(
-            &reopened,
-            "https://news.test/",
-            &["https://ads.example.com/a.js"]
-        ),
-        ["ads.example.com"]
+        reopened
+            .cosmetic_resources("https://example.org/".into())
+            .hide_selectors,
+        [".sponsored"]
     );
 }
 
@@ -552,27 +543,23 @@ fn readers_are_not_blocked_while_rebuilding() {
     shields.rebuild().expect("rebuild");
     let rebuilder = Arc::clone(&shields);
     shields
-        .set_custom_rules("||late.example.com^".into())
+        .set_custom_rules("late.test##.late-ad".into())
         .expect("custom rules");
     let handle = std::thread::spawn(move || rebuilder.rebuild().expect("rebuild"));
     for _ in 0..50 {
         // Always answered from a complete engine: the old one or the new one.
         assert_eq!(
-            blocked_hosts(
-                &shields,
-                "https://news.test/",
-                &["https://ads.example.com/a.js"]
-            ),
-            ["ads.example.com"]
+            shields
+                .cosmetic_resources("https://example.org/".into())
+                .hide_selectors,
+            [".sponsored"]
         );
     }
     handle.join().expect("rebuild thread");
     assert_eq!(
-        blocked_hosts(
-            &shields,
-            "https://news.test/",
-            &["https://late.example.com/a.js"]
-        ),
-        ["late.example.com"]
+        shields
+            .cosmetic_resources("https://late.test/".into())
+            .hide_selectors,
+        [".late-ad"]
     );
 }
