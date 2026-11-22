@@ -29,6 +29,8 @@ targets:
     platform: macOS
     sources:
       - path: Bamboo
+        excludes:
+          - Resources/FilterLists
     dependencies:
       - package: Sparkle
       - sdk: Security.framework
@@ -64,7 +66,7 @@ targets:
             LSHandlerRank: Alternate
             LSItemContentTypes: [com.apple.webarchive]
         SUFeedURL: https://github.com/jackh54/bamboo/releases/latest/download/appcast.xml
-        SUPublicEDKey: ""
+        SUPublicEDKey: vRFttCoB348B2KtRdzvBETwJhV+M9/TKwS1nplyqOiM=
         SUEnableAutomaticChecks: true
         SUAutomaticallyUpdate: true
         SUScheduledCheckInterval: 21600
@@ -92,6 +94,16 @@ targets:
           "$SRCROOT/../scripts/build-core.sh"
         basedOnDependencyAnalysis: false
     postBuildScripts:
+      # A folder-reference resource fails the build when the directory is missing
+      # (XcodeGen's `optional` only covers project generation), so copy it here.
+      # scripts/fetch-filter-lists.sh fills it at release time; absent locally.
+      - name: Embed filter lists
+        script: |
+          set -euo pipefail
+          src="$SRCROOT/Bamboo/Resources/FilterLists"
+          [ -d "$src" ] || exit 0
+          rsync -a --delete "$src/" "$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/FilterLists/"
+        basedOnDependencyAnalysis: false
       - name: Embed bamboo-mcp
         script: |
           set -euo pipefail

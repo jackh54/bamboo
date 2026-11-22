@@ -1,0 +1,250 @@
+name: Release
+
+# Called by release-please.yml once it has tagged a release (a release created
+# with GITHUB_TOKEN doesn't trigger workflows itself). Run it by hand to retry a
+# failed release or to rehearse one: a dry run builds everything and attaches the
+# result to the workflow run without touching the GitHub release.
+on:
+  workflow_call:
+    inputs:
+      tag:
+        description: Existing release tag, for example v0.2.0
+        type: string
+        required: true
+      dry_run:
+        description: Build and package, but don't publish to the GitHub release
+        type: boolean
+        default: false
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing tag to build, for example v0.2.0
+        type: string
+        required: true
+      dry_run:
+        description: Build and package, but don't publish to the GitHub release
+        type: boolean
+        default: true
+
+concurrency:
+  group: release-${{ inputs.tag }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  XCODE_APP: /Applications/Xcode_27.2.app
+
+jobs:
+  build:
+    name: Build, sign and publish
+    runs-on: xcode-27
+    timeout-minutes: 90
+    permissions:
+      contents: write # upload assets to the release
+    env:
+      TAG: ${{ inputs.tag }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.tag }}
+          fetch-depth: 0 # the build number is the commit count
+          persist-credentials: false
+
+      - name: Resolve version
+        id: version
+        run: |
+          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Tag '$TAG' is not a release tag like v1.2.3"
+            exit 1
+          fi
+          {
+            echo "marketing=${TAG#v}"
+            echo "build=$(git rev-list --count HEAD)"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Check secrets
+        id: signing
+        env:
+          SPARKLE_ED_PRIVATE_KEY: ${{ secrets.SPARKLE_ED_PRIVATE_KEY }}
+          APPLE_DEVELOPER_ID_P12: ${{ secrets.APPLE_DEVELOPER_ID_P12 }}
+          APPLE_DEVELOPER_ID_P12_PASSWORD: ${{ secrets.APPLE_DEVELOPER_ID_P12_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER_ID: ${{ secrets.APPLE_API_ISSUER_ID }}
+          APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
+        run: |
+          # An appcast without a valid signature makes every install reject the update.
+          if [[ -z "$SPARKLE_ED_PRIVATE_KEY" ]]; then
+            echo "::error::SPARKLE_ED_PRIVATE_KEY is not set; see docs/RELEASING.md"
+            exit 1
+          fi
+          apple_secrets=(APPLE_DEVELOPER_ID_P12 APPLE_DEVELOPER_ID_P12_PASSWORD APPLE_TEAM_ID
+                         APPLE_API_KEY_ID APPLE_API_ISSUER_ID APPLE_API_KEY_P8)
+          missing=()
+          for name in "${apple_secrets[@]}"; do
+            [[ -n "${!name}" ]] || missing+=("$name")
+          done
+          if [[ ${#missing[@]} -eq 0 ]]; then
+            echo "signed=true" >> "$GITHUB_OUTPUT"
+          elif [[ ${#missing[@]} -eq ${#apple_secrets[@]} ]]; then
+            echo "signed=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::Apple signing secrets are not configured. This build is ad-hoc signed and not notarized: Gatekeeper blocks the first launch (users must allow it under System Settings > Privacy & Security > Open Anyway), and macOS will ask again for camera, microphone, location and Keychain access after each update because every ad-hoc build has a different code identity. Sparkle still installs updates, because it accepts a valid EdDSA signature without Apple code signing."
+          else
+            echo "::error::Apple signing is partly configured; missing: ${missing[*]}"
+            exit 1
+          fi
+
+      - name: Select Xcode
+        run: sudo xcode-select --switch "$XCODE_APP"
+
+      - name: Install Rust
+        run: |
+          rustup toolchain install stable --profile minimal \
+            --target aarch64-apple-darwin --target x86_64-apple-darwin
+          rustup default stable
+
+      - run: brew install xcodegen
+
+      - name: Fetch filter lists
+        run: scripts/fetch-filter-lists.sh crates/bamboo-shields/catalog.json app/Bamboo/Resources/FilterLists
+
+      - name: Build Rust core
+        run: BAMBOO_RUST_PROFILE=dist scripts/build-core.sh --universal
+
+      - name: Import signing certificate
+        id: keychain
+        if: steps.signing.outputs.signed == 'true'
+        env:
+          APPLE_DEVELOPER_ID_P12: ${{ secrets.APPLE_DEVELOPER_ID_P12 }}
+          APPLE_DEVELOPER_ID_P12_PASSWORD: ${{ secrets.APPLE_DEVELOPER_ID_P12_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          keychain="$RUNNER_TEMP/bamboo-signing.keychain-db"
+          keychain_password="$(uuidgen)"
+          certificate="$RUNNER_TEMP/developer-id.p12"
+          security create-keychain -p "$keychain_password" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$keychain_password" "$keychain"
+          printf '%s' "$APPLE_DEVELOPER_ID_P12" | base64 --decode > "$certificate"
+          security import "$certificate" -P "$APPLE_DEVELOPER_ID_P12_PASSWORD" \
+            -f pkcs12 -T /usr/bin/codesign -k "$keychain"
+          rm -f "$certificate"
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$keychain_password" "$keychain" >/dev/null
+          security list-keychains -d user -s "$keychain" "$HOME/Library/Keychains/login.keychain-db"
+          identity="$(security find-identity -v -p codesigning "$keychain" \
+            | grep "Developer ID Application" | grep "($APPLE_TEAM_ID)" | head -n 1 \
+            | sed -E 's/^[^"]*"([^"]*)".*$/\1/')"
+          if [[ -z "$identity" ]]; then
+            echo "::error::No 'Developer ID Application' identity for team $APPLE_TEAM_ID in the .p12"
+            exit 1
+          fi
+          {
+            echo "identity=$identity"
+            echo "path=$keychain"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Build app
+        run: |
+          xcodegen generate --spec app/project.yml --project app
+          scripts/release/build-app.sh "${{ steps.version.outputs.marketing }}" "${{ steps.version.outputs.build }}" dist
+
+      - name: Sign app
+        env:
+          IDENTITY: ${{ steps.keychain.outputs.identity || '-' }}
+        run: scripts/release/sign-app.sh dist/Bamboo.app "$IDENTITY"
+
+      - name: Notarize app
+        if: steps.signing.outputs.signed == 'true'
+        env:
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER_ID: ${{ secrets.APPLE_API_ISSUER_ID }}
+          APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
+        run: |
+          ditto -c -k --keepParent dist/Bamboo.app "$RUNNER_TEMP/Bamboo-notarize.zip"
+          scripts/release/notarize.sh "$RUNNER_TEMP/Bamboo-notarize.zip"
+          xcrun stapler staple dist/Bamboo.app
+          xcrun stapler validate dist/Bamboo.app
+
+      - name: Package
+        run: scripts/release/package.sh dist/Bamboo.app "${{ steps.version.outputs.marketing }}" dist
+
+      - name: Sign and notarize DMG
+        if: steps.signing.outputs.signed == 'true'
+        env:
+          IDENTITY: ${{ steps.keychain.outputs.identity }}
+          DMG: dist/Bamboo-${{ steps.version.outputs.marketing }}.dmg
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER_ID: ${{ secrets.APPLE_API_ISSUER_ID }}
+          APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
+        run: |
+          codesign --force --sign "$IDENTITY" --timestamp "$DMG"
+          scripts/release/notarize.sh "$DMG"
+          xcrun stapler staple "$DMG"
+          xcrun stapler validate "$DMG"
+
+      - name: Generate appcast
+        env:
+          SPARKLE_ED_PRIVATE_KEY: ${{ secrets.SPARKLE_ED_PRIVATE_KEY }}
+          ARCHIVE: dist/Bamboo-${{ steps.version.outputs.marketing }}.zip
+        run: |
+          scripts/release/fetch-sparkle.sh "$RUNNER_TEMP/sparkle"
+          mkdir "$RUNNER_TEMP/appcast"
+          cp "$ARCHIVE" "$RUNNER_TEMP/appcast/"
+          printf '%s' "$SPARKLE_ED_PRIVATE_KEY" \
+            | scripts/release/appcast.sh "$RUNNER_TEMP/sparkle/bin" "$RUNNER_TEMP/appcast" "$TAG"
+          grep -q 'sparkle:edSignature' "$RUNNER_TEMP/appcast/appcast.xml"
+          cp "$RUNNER_TEMP/appcast/appcast.xml" dist/appcast.xml
+
+      - name: Checksums
+        working-directory: dist
+        run: shasum -a 256 Bamboo-*.dmg Bamboo-*.zip appcast.xml > SHA256SUMS
+
+      - name: Attach to workflow run
+        if: inputs.dry_run
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: bamboo-${{ steps.version.outputs.marketing }}
+          path: |
+            dist/Bamboo-*.dmg
+            dist/Bamboo-*.zip
+            dist/appcast.xml
+            dist/SHA256SUMS
+          if-no-files-found: error
+
+      - name: Note missing notarization in release notes
+        if: ${{ !inputs.dry_run && steps.signing.outputs.signed == 'false' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view "$TAG" --json body --jq .body > "$RUNNER_TEMP/notes.md"
+          if ! grep -q 'not notarized' "$RUNNER_TEMP/notes.md"; then
+            cat >> "$RUNNER_TEMP/notes.md" <<'EOF'
+
+          ## Not notarized
+
+          This build is not signed with an Apple Developer ID and is not notarized, so macOS blocks it the first time you open it. Open Bamboo once, then go to System Settings > Privacy & Security and choose Open Anyway. On macOS 15 and later, Control-click > Open no longer bypasses the block.
+
+          Automatic updates still work. macOS may ask again for camera, microphone, location and Keychain access after an update.
+          EOF
+            gh release edit "$TAG" --notes-file "$RUNNER_TEMP/notes.md"
+          fi
+
+      - name: Publish to GitHub release
+        if: ${{ !inputs.dry_run }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release upload "$TAG" --clobber \
+            dist/Bamboo-*.dmg dist/Bamboo-*.zip dist/appcast.xml dist/SHA256SUMS
+
+      - name: Remove signing keychain
+        if: ${{ always() && steps.keychain.outputs.path != '' }}
+        env:
+          KEYCHAIN: ${{ steps.keychain.outputs.path }}
+        run: security delete-keychain "$KEYCHAIN"
