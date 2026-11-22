@@ -315,6 +315,7 @@ fn imports_chromium_history_including_unflushed_wal_pages() {
         ("https://hidden.example/", "Hidden", 1, JUN_2024_MS, 1),
         ("chrome://settings/", "Settings", 1, JUN_2024_MS, 0),
         ("https://never.example/", "Never", 0, 0, 0),
+        ("https://redirect.example/", "Redirect", 0, JUN_2024_MS, 0),
     ];
     for (url, title, visits, visited_ms, hidden) in rows {
         let visited = if visited_ms == 0 {

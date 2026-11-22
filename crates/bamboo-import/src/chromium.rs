@@ -394,9 +394,11 @@ fn push_children(
 
 fn history(dir: &Path, since_ms: Option<i64>) -> Result<Vec<ImportedHistory>, ImportError> {
     read_database(&dir.join("History"), |db| {
+        // Chromium doesn't count a visit for redirect hops, leaving them at
+        // visit_count 0; they aren't pages the user looked at.
         let mut statement = db.prepare(
             "SELECT url, title, visit_count, last_visit_time FROM urls \
-             WHERE hidden = 0 ORDER BY last_visit_time DESC",
+             WHERE hidden = 0 AND visit_count > 0 ORDER BY last_visit_time DESC",
         )?;
         let rows = statement.query_map([], |row| {
             Ok((
