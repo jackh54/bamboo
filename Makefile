@@ -1,5 +1,7 @@
 # Common tasks. `make run` builds everything and launches a debug build.
-DERIVED := build/DerivedData
+# Build output stays out of ~/Documents: macOS asks for folder access every time a
+# freshly signed Bamboo loads its test bundle from a protected folder.
+DERIVED := $(HOME)/Library/Developer/Xcode/DerivedData/Bamboo
 APP := $(DERIVED)/Build/Products/Debug/Bamboo.app
 
 .PHONY: core project app run test test-rust test-app lint clean
