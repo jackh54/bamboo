@@ -13,6 +13,25 @@ enum SidebarPosition: String, CaseIterable, Codable, Sendable {
     case left, right
 }
 
+/// Brave's "Use vertical tabs": tabs across the top, or the sidebar.
+enum TabLayout: String, CaseIterable, Codable, Sendable {
+    case horizontal, vertical
+}
+
+/// Brave's "Show bookmarks" choice for the bookmarks bar.
+enum BookmarksBarVisibility: String, CaseIterable, Codable, Sendable {
+    case always, never, newTabOnly
+}
+
+enum ReaderFont: String, CaseIterable, Codable, Sendable {
+    case serif, sans
+}
+
+enum ReaderTheme: String, CaseIterable, Codable, Sendable {
+    /// Light or dark, following the window's appearance.
+    case system, light, sepia, dark
+}
+
 enum HTTPSMode: String, CaseIterable, Codable, Sendable {
     /// Try HTTPS first and fall back to HTTP when the site has no HTTPS.
     case upgrade
@@ -49,6 +68,24 @@ final class AppSettings {
     var appearance: AppearanceMode { didSet { save(appearance.rawValue, .appearance) } }
     var sidebarPosition: SidebarPosition { didSet { save(sidebarPosition.rawValue, .sidebarPosition) } }
     var showFullURLs: Bool { didSet { save(showFullURLs, .showFullURLs) } }
+    /// Width the user dragged the sidebar to, within `Theme.Metrics.sidebarWidthRange`.
+    var sidebarWidth: Double { didSet { save(sidebarWidth, .sidebarWidth) } }
+
+    // Tabs and toolbar
+    var tabLayout: TabLayout { didSet { save(tabLayout.rawValue, .tabLayout) } }
+    var bookmarksBar: BookmarksBarVisibility { didSet { save(bookmarksBar.rawValue, .bookmarksBar) } }
+    var showHomeButton: Bool { didSet { save(showHomeButton, .showHomeButton) } }
+
+    // New tab page (Customize on the page itself)
+    var newTabShowsBackground: Bool { didSet { save(newTabShowsBackground, .newTabShowsBackground) } }
+    var newTabShowsClock: Bool { didSet { save(newTabShowsClock, .newTabShowsClock) } }
+    var newTabShowsStats: Bool { didSet { save(newTabShowsStats, .newTabShowsStats) } }
+    var newTabShowsTopSites: Bool { didSet { save(newTabShowsTopSites, .newTabShowsTopSites) } }
+
+    // Reader
+    var readerFont: ReaderFont { didSet { save(readerFont.rawValue, .readerFont) } }
+    var readerFontSize: Int { didSet { save(readerFontSize, .readerFontSize) } }
+    var readerTheme: ReaderTheme { didSet { save(readerTheme.rawValue, .readerTheme) } }
 
     // Search
     var searchEngine: SearchEngineID { didSet { save(searchEngine.rawValue, .searchEngine) } }
@@ -85,6 +122,17 @@ final class AppSettings {
         appearance = AppearanceMode(rawValue: defaults.string(forKey: Key.appearance.rawValue) ?? "") ?? .system
         sidebarPosition = SidebarPosition(rawValue: defaults.string(forKey: Key.sidebarPosition.rawValue) ?? "") ?? .left
         showFullURLs = defaults.object(forKey: Key.showFullURLs.rawValue) as? Bool ?? false
+        sidebarWidth = defaults.object(forKey: Key.sidebarWidth.rawValue) as? Double ?? Double(Theme.Metrics.sidebarWidth)
+        tabLayout = TabLayout(rawValue: defaults.string(forKey: Key.tabLayout.rawValue) ?? "") ?? .horizontal
+        bookmarksBar = BookmarksBarVisibility(rawValue: defaults.string(forKey: Key.bookmarksBar.rawValue) ?? "") ?? .newTabOnly
+        showHomeButton = defaults.object(forKey: Key.showHomeButton.rawValue) as? Bool ?? false
+        newTabShowsBackground = defaults.object(forKey: Key.newTabShowsBackground.rawValue) as? Bool ?? true
+        newTabShowsClock = defaults.object(forKey: Key.newTabShowsClock.rawValue) as? Bool ?? true
+        newTabShowsStats = defaults.object(forKey: Key.newTabShowsStats.rawValue) as? Bool ?? true
+        newTabShowsTopSites = defaults.object(forKey: Key.newTabShowsTopSites.rawValue) as? Bool ?? true
+        readerFont = ReaderFont(rawValue: defaults.string(forKey: Key.readerFont.rawValue) ?? "") ?? .serif
+        readerFontSize = defaults.object(forKey: Key.readerFontSize.rawValue) as? Int ?? 19
+        readerTheme = ReaderTheme(rawValue: defaults.string(forKey: Key.readerTheme.rawValue) ?? "") ?? .system
         searchEngine = SearchEngineID(rawValue: defaults.string(forKey: Key.searchEngine.rawValue) ?? "") ?? .duckDuckGo
         searchSuggestionsEnabled = defaults.object(forKey: Key.searchSuggestionsEnabled.rawValue) as? Bool ?? true
         stripTrackingParameters = defaults.object(forKey: Key.stripTrackingParameters.rawValue) as? Bool ?? true
@@ -105,7 +153,10 @@ final class AppSettings {
 
     private enum Key: String {
         case startupBehavior, hibernateAfterMinutes, askWhereToSaveDownloads, warnBeforeQuitting
-        case appearance, sidebarPosition, showFullURLs
+        case appearance, sidebarPosition, showFullURLs, sidebarWidth
+        case tabLayout, bookmarksBar, showHomeButton
+        case newTabShowsBackground, newTabShowsClock, newTabShowsStats, newTabShowsTopSites
+        case readerFont, readerFontSize, readerTheme
         case searchEngine, searchSuggestionsEnabled
         case stripTrackingParameters, globalPrivacyControl, httpsMode, autoplayPolicy, clearDataOnQuit
         case offerToSavePasswords, autofillPasswords

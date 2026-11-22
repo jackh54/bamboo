@@ -83,9 +83,21 @@ enum MainMenu {
 
     private static func viewMenu() -> NSMenu {
         let menu = NSMenu(title: "View")
-        menu.addItem(item("Hide Sidebar", #selector(BrowserWindowController.toggleBrowserSidebar(_:)), "s"))
+        // ⌘S stays free for Save Page, as in Brave and Chrome.
+        menu.addItem(item("Hide Sidebar", #selector(BrowserWindowController.toggleBrowserSidebar(_:)), "s", [.control, .command]))
         menu.addItem(item("Ask Claude", #selector(BrowserWindowController.toggleAssistant(_:)), "j"))
         menu.addItem(item("Command Palette", #selector(BrowserWindowController.showCommandPalette(_:)), "k"))
+        let spaces = NSMenu(title: "Spaces")
+        for index in 1...9 {
+            // The controller retitles these with the window's space names.
+            let entry = item("Space \(index)", #selector(BrowserWindowController.selectSpaceByIndex(_:)), "\(index)", [.control])
+            entry.tag = index
+            spaces.addItem(entry)
+        }
+        menu.addItem(submenu(spaces))
+        menu.addItem(.separator())
+        menu.addItem(item("Always Show Bookmarks Bar", #selector(BrowserWindowController.toggleBookmarksBar(_:)), "b", [.command, .shift]))
+        menu.addItem(item("Use Vertical Tabs", #selector(BrowserWindowController.toggleTabLayout(_:))))
         menu.addItem(.separator())
         menu.addItem(item("Reload Page", #selector(BrowserWindowController.reloadPage(_:)), "r"))
         menu.addItem(item("Reload Ignoring Cache", #selector(BrowserWindowController.reloadFromOrigin(_:)), "r", [.command, .shift]))
@@ -106,6 +118,7 @@ enum MainMenu {
         let menu = NSMenu(title: "History")
         menu.addItem(item("Back", #selector(BrowserWindowController.goBack(_:)), "["))
         menu.addItem(item("Forward", #selector(BrowserWindowController.goForward(_:)), "]"))
+        menu.addItem(item("Home", #selector(BrowserWindowController.goHome(_:)), "h", [.command, .shift]))
         menu.addItem(.separator())
         menu.addItem(item("Show All History", #selector(BrowserWindowController.showHistory(_:)), "y"))
         menu.addItem(item("Clear Browsing Data…", #selector(AppDelegate.showClearBrowsingData(_:)), "\u{8}", [.command, .shift]))
@@ -125,6 +138,10 @@ enum MainMenu {
         menu.addItem(item("Show Previous Tab", #selector(BrowserWindowController.selectPreviousTab(_:)), "\t", [.control, .shift]))
         menu.addItem(item("Show Next Tab", #selector(BrowserWindowController.selectNextTab(_:)), "]", [.command, .shift], alternate: true))
         menu.addItem(item("Show Previous Tab", #selector(BrowserWindowController.selectPreviousTab(_:)), "[", [.command, .shift], alternate: true))
+        let rightArrow = String(Character(UnicodeScalar(NSRightArrowFunctionKey)!))
+        let leftArrow = String(Character(UnicodeScalar(NSLeftArrowFunctionKey)!))
+        menu.addItem(item("Show Next Tab", #selector(BrowserWindowController.selectNextTab(_:)), rightArrow, [.command, .option], alternate: true))
+        menu.addItem(item("Show Previous Tab", #selector(BrowserWindowController.selectPreviousTab(_:)), leftArrow, [.command, .option], alternate: true))
         menu.addItem(.separator())
         for index in 1...9 {
             let title = index == 9 ? "Select Last Tab" : "Select Tab \(index)"

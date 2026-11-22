@@ -241,6 +241,20 @@ final class BrowserWindowModel: Identifiable {
         return space
     }
 
+    func update(_ space: Space, name: String, symbol: String, tint: SpaceTint) {
+        space.name = name
+        space.symbol = symbol
+        space.tint = tint
+        sessionChanged()
+    }
+
+    /// ⌃1…⌃9 switch to the nth space.
+    func selectSpace(atShortcutIndex index: Int) {
+        if let space = spaces[safe: index - 1] {
+            selectSpace(space)
+        }
+    }
+
     func removeSpace(_ space: Space) {
         guard spaces.count > 1 else { return }
         space.allTabs.forEach { $0.close() }
@@ -249,6 +263,37 @@ final class BrowserWindowModel: Identifiable {
             selectSpace(spaces[0])
         }
         sessionChanged()
+    }
+
+    // MARK: - Find in page
+
+    /// Steps through matches of `findQuery` in the selected tab.
+    func findInPage(backwards: Bool) {
+        guard let webView = selectedTab?.webView, !findQuery.isEmpty else {
+            isFindBarVisible = true
+            return
+        }
+        let configuration = WKFindConfiguration()
+        configuration.backwards = backwards
+        configuration.wraps = true
+        configuration.caseSensitive = false
+        let query = findQuery
+        Task {
+            do {
+                let result = try await webView.find(query, configuration: configuration)
+                findQueryMatched = result.matchFound
+            } catch {
+                AppServices.shared.reportNonFatal(error, "Find in page")
+            }
+        }
+    }
+
+    func closeFindBar() {
+        isFindBarVisible = false
+        findQueryMatched = nil
+        // WebKit marks the current match by selecting it; clearing the selection removes the highlight.
+        selectedTab?.webView?.evaluateJavaScript(
+            "getSelection().removeAllRanges()", in: nil, in: .defaultClient, completionHandler: nil)
     }
 
     /// Closes every tab when the window goes away.

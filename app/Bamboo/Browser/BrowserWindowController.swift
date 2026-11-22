@@ -17,12 +17,31 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         window.titlebarAppearsTransparent = true
         window.titleVisibility = .hidden
         window.tabbingMode = .disallowed
+        // An empty toolbar makes the title bar as tall as the tab strip, so
+        // AppKit centres the traffic lights on the tabs.
+        window.toolbar = NSToolbar(identifier: "BrowserWindow")
+        window.toolbarStyle = .unifiedCompact
+        window.titlebarSeparatorStyle = .none
         window.minSize = NSSize(width: 640, height: 420)
         window.isReleasedWhenClosed = false
         window.title = model.isPrivate ? "Private Browsing" : "Bamboo"
-        window.contentView = NSHostingView(rootView: BrowserWindowView(model: model))
+        let hostingView = NSHostingView(rootView: BrowserWindowView(model: model))
+        // The window, not the SwiftUI content, decides the window's size.
+        hostingView.sizingOptions = []
+        window.contentView = hostingView
         super.init(window: window)
         window.delegate = self
+        // Esc goes to the page while it has focus, and pages rarely use it, so
+        // the window watches for it to close the panel over the page.
+        escapeMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard event.keyCode == Self.escapeKeyCode else { return event }
+            let windowNumber = event.windowNumber
+            let handled = MainActor.assumeIsolated {
+                guard let self, self.window?.windowNumber == windowNumber else { return false }
+                return self.closeInnermostPanel()
+            }
+            return handled ? nil : event
+        }
     }
 
     @available(*, unavailable)
@@ -31,7 +50,10 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     }
 
     private var windows: WindowManager { AppServices.shared.windows }
+    private var settings: AppSettings { AppServices.shared.settings }
     private var tab: Tab? { model.selectedTab }
+    private var escapeMonitor: Any?
+    private nonisolated static let escapeKeyCode: UInt16 = 53
 
     // MARK: - NSWindowDelegate
 
@@ -40,6 +62,9 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     }
 
     func windowWillClose(_ notification: Notification) {
+        if let escapeMonitor {
+            NSEvent.removeMonitor(escapeMonitor)
+        }
         windows.windowWillClose(self)
     }
 
@@ -87,6 +112,11 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         model.selectTab(atShortcutIndex: sender.tag)
     }
 
+    /// Menu items ⌃1…⌃9 carry their index in `tag`.
+    @objc func selectSpaceByIndex(_ sender: NSMenuItem) {
+        withAnimation(Theme.Motion.standard) { model.selectSpace(atShortcutIndex: sender.tag) }
+    }
+
     @objc func togglePinTab(_ sender: Any?) {
         if let tab { model.togglePin(tab) }
     }
@@ -101,6 +131,12 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     }
 
     // MARK: - Navigation
+
+    /// The home button and ⇧⌘H open the new tab page.
+    @objc func goHome(_ sender: Any?) {
+        guard tab?.url != nil else { return }
+        model.newTab(after: tab)
+    }
 
     @objc func goBack(_ sender: Any?) { tab?.goBack() }
     @objc func goForward(_ sender: Any?) { tab?.goForward() }
@@ -136,32 +172,27 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         model.isFindBarVisible = true
     }
 
-    @objc func findNext(_ sender: Any?) { find(backwards: false) }
-    @objc func findPrevious(_ sender: Any?) { find(backwards: true) }
-
-    /// Steps through matches of `model.findQuery`, which the find bar edits.
-    func find(backwards: Bool) {
-        guard let webView = tab?.webView, !model.findQuery.isEmpty else {
-            model.isFindBarVisible = true
-            return
-        }
-        let configuration = WKFindConfiguration()
-        configuration.backwards = backwards
-        configuration.wraps = true
-        configuration.caseSensitive = false
-        let query = model.findQuery
-        Task {
-            do {
-                let result = try await webView.find(query, configuration: configuration)
-                model.findQueryMatched = result.matchFound
-            } catch {
-                AppServices.shared.reportNonFatal(error, "Find in page")
-            }
-        }
-    }
+    @objc func findNext(_ sender: Any?) { model.findInPage(backwards: false) }
+    @objc func findPrevious(_ sender: Any?) { model.findInPage(backwards: true) }
 
     @objc func toggleReader(_ sender: Any?) {
         tab?.isReaderActive.toggle()
+    }
+
+    /// Closes the find bar, the library or Reader, in that order. Returns
+    /// false when none is open or a text field is being edited (it keeps Esc).
+    private func closeInnermostPanel() -> Bool {
+        if (window?.firstResponder as? NSTextView)?.isFieldEditor == true { return false }
+        if model.isFindBarVisible {
+            model.closeFindBar()
+        } else if model.libraryPanel != nil {
+            model.libraryPanel = nil
+        } else if let tab, tab.isReaderActive {
+            tab.isReaderActive = false
+        } else {
+            return false
+        }
+        return true
     }
 
     /// Opens WebKit's inspector through its private `_inspector` object; the
@@ -185,6 +216,18 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         withAnimation(.snappy) { model.isSidebarVisible.toggle() }
     }
 
+    @objc func toggleBookmarksBar(_ sender: Any?) {
+        withAnimation(Theme.Motion.standard) {
+            settings.bookmarksBar = settings.bookmarksBar == .always ? .never : .always
+        }
+    }
+
+    @objc func toggleTabLayout(_ sender: Any?) {
+        withAnimation(Theme.Motion.standard) {
+            settings.tabLayout = settings.tabLayout == .vertical ? .horizontal : .vertical
+        }
+    }
+
     @objc func toggleAssistant(_ sender: Any?) {
         withAnimation(.snappy) { model.isAssistantVisible.toggle() }
     }
@@ -206,6 +249,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             } else {
                 _ = try store.addBookmark(parentId: nil, title: tab.title.isEmpty ? url.absoluteString : tab.title, url: url.absoluteString)
             }
+            BookmarksRevision.shared.bump()
         } catch {
             presentError(error)
         }
@@ -224,9 +268,22 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         case #selector(toggleAgentControl(_:)):
             menuItem.title = tab?.isAgentControlled == true ? "Take Tab Back from Agents" : "Let Agents Control This Tab"
             return tab.map { !$0.isPrivate && $0.url != nil } ?? false
+        case #selector(selectSpaceByIndex(_:)):
+            guard let space = model.spaces[safe: menuItem.tag - 1] else { return false }
+            menuItem.title = space.name
+            menuItem.state = space.id == model.selectedSpaceID ? .on : .off
+            return true
         case #selector(toggleBrowserSidebar(_:)):
             menuItem.title = model.isSidebarVisible ? "Hide Sidebar" : "Show Sidebar"
+            return settings.tabLayout == .vertical
+        case #selector(toggleBookmarksBar(_:)):
+            menuItem.state = settings.bookmarksBar == .always ? .on : .off
             return true
+        case #selector(toggleTabLayout(_:)):
+            menuItem.state = settings.tabLayout == .vertical ? .on : .off
+            return true
+        case #selector(goHome(_:)):
+            return tab?.url != nil
         case #selector(toggleAssistant(_:)):
             menuItem.title = model.isAssistantVisible ? "Hide Claude" : "Ask Claude"
             return true
