@@ -224,7 +224,7 @@ struct SpaceEditor: View {
                 .disabled(editedSpace != nil)
                 Text(editedSpace == nil
                      ? "Tabs in this space use the profile's cookies, history and bookmarks."
-                     : "A space keeps the profile it was created with.")
+                     : "A space keeps the profile it was created with. To use another profile, choose it under Profiles in this menu; it opens in its own window.")
                     .font(.system(size: 11.5))
                     .foregroundStyle(.secondary)
             }

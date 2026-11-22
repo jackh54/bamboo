@@ -334,8 +334,8 @@ private struct ShieldsButton: View {
     }
 }
 
-/// The space's icon on its colour, like Brave's profile avatar. Its menu
-/// switches spaces and opens the space editor.
+/// The space's icon on its colour, like Brave's profile avatar. Its menu switches
+/// spaces, opens the space editor, and brings up another profile's window.
 private struct SpaceAvatarMenu: View {
     let model: BrowserWindowModel
     @State private var editorTarget: SpaceEditorTarget?
@@ -358,6 +358,18 @@ private struct SpaceAvatarMenu: View {
                 Divider()
                 Button("New Space…") { editorTarget = .new }
                 Button("Edit “\(space.name)”…") { editorTarget = .edit(space) }
+                Divider()
+                Section("Profiles") {
+                    ForEach(AppServices.shared.profiles.profiles) { profile in
+                        Toggle(isOn: Binding(
+                            get: { profile === space.profile },
+                            set: { if $0 { AppServices.shared.windows.showWindow(for: profile) } })
+                        ) {
+                            Label(profile.name, systemImage: profile.symbol)
+                        }
+                    }
+                    Button("Manage Profiles…") { SettingsWindowController.shared.show(section: .getStarted) }
+                }
             }
             Divider()
             Toggle("Use Vertical Tabs", isOn: Binding(

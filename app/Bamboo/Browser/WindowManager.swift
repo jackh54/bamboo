@@ -28,12 +28,22 @@ final class WindowManager {
 
     // MARK: - Windows
 
+    /// A window for `profile`, the default profile when nil.
     @discardableResult
-    func newWindow(isPrivate: Bool = false) -> BrowserWindowModel {
-        let model = BrowserWindowModel(profile: AppServices.shared.profiles.defaultProfile, isPrivate: isPrivate)
+    func newWindow(profile: Profile? = nil, isPrivate: Bool = false) -> BrowserWindowModel {
+        let model = BrowserWindowModel(profile: profile ?? AppServices.shared.profiles.defaultProfile, isPrivate: isPrivate)
         show(model, frame: nil)
         model.newTab()
         return model
+    }
+
+    /// Brave's profile menu: brings up a window showing `profile`, else opens one for it.
+    func showWindow(for profile: Profile) {
+        if let controller = controllers.first(where: { !$0.model.isPrivate && $0.model.selectedSpace.profile === profile }) {
+            controller.showWindow(nil)
+        } else {
+            newWindow(profile: profile)
+        }
     }
 
     func show(_ model: BrowserWindowModel, frame: NSRect?) {

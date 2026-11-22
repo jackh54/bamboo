@@ -56,8 +56,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: - App-level menu actions (window-level actions live on BrowserWindowController)
 
+    /// Opens in the front window's profile, as Brave does.
     @objc func newWindow(_ sender: Any?) {
-        services.windows.newWindow()
+        services.windows.newWindow(profile: services.windows.frontmostNonPrivate?.selectedSpace.profile)
     }
 
     @objc func newPrivateWindow(_ sender: Any?) {
