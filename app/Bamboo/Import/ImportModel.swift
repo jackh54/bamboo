@@ -114,9 +114,15 @@ final class ImportModel {
 
         case .passwords:
             let logins = bundle.logins.compactMap(ImportMapping.login)
-            try AppServices.shared.passwords.saveAll(logins)
-            let skipped = bundle.logins.count - logins.count
-            return Self.counted(logins.count, "password") + (skipped > 0 ? ", skipped \(skipped) not for websites" : "")
+            let added = try AppServices.shared.passwords.saveNew(logins)
+            var detail = Self.counted(added, "password")
+            if logins.count > added {
+                detail += ", skipped \(logins.count - added) already saved"
+            }
+            if bundle.logins.count > logins.count {
+                detail += ", skipped \(bundle.logins.count - logins.count) not for websites"
+            }
+            return detail
 
         case .searchEngines:
             summary.matchingEngine = ImportMapping.builtInEngine(matching: bundle.searchEngines)

@@ -110,9 +110,34 @@ final class PasswordStoreTests: XCTestCase {
         XCTAssertEqual(lines[2], #"\#(server),https://\#(server),"jack, the second","say ""hi""""#)
     }
 
-    func testSaveAllWritesEveryLogin() throws {
-        try store.saveAll([(login("a"), "1"), (login("b"), "2"), (login("c"), "3")])
+    func testExportFileIsPrivateAndReplacesAnOldOne() throws {
+        try store.save(login("amy"), password: "plain")
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("bamboo-export-\(UUID().uuidString).csv")
+        defer { try? FileManager.default.removeItem(at: url) }
+        try Data("old".utf8).write(to: url)
+
+        try store.exportCSV(to: url)
+
+        let permissions = try FileManager.default.attributesOfItem(atPath: url.path)[.posixPermissions] as? Int
+        XCTAssertEqual(permissions, 0o600)
+        XCTAssertEqual(try String(contentsOf: url, encoding: .utf8), try store.exportCSV())
+    }
+
+    func testSaveNewAddsMissingLogins() throws {
+        let added = try store.saveNew([(login("a"), "1"), (login("b"), "2"), (login("c"), "3")])
+        XCTAssertEqual(added, 3)
         XCTAssertEqual(store.logins.map(\.username), ["a", "b", "c"])
         XCTAssertEqual(try store.password(for: login("b")), "2")
+    }
+
+    /// Importing must not replace a password the user saved since with the other browser's older one.
+    func testSaveNewKeepsExistingLogins() throws {
+        try store.save(login("jack"), password: "newer")
+        let added = try store.saveNew([(login("jack"), "older"), (login("jack", secure: false), "http"), (login("amy"), "x")])
+
+        XCTAssertEqual(added, 2)
+        XCTAssertEqual(try store.password(for: login("jack")), "newer")
+        XCTAssertEqual(try store.password(for: login("jack", secure: false)), "http")
+        XCTAssertEqual(store.logins.count, 3)
     }
 }

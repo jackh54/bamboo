@@ -125,24 +125,47 @@ final class AutofillTabExtension: NSObject, TabExtension, WKScriptMessageHandler
 
     // MARK: - Saving
 
+    /// The offer belongs to the origin it was made on; once the tab shows another origin,
+    /// saving from the banner could be mistaken for saving for the page now on screen.
+    func didCommitNavigation(in tab: Tab) {
+        guard let offer = tab.passwordSaveOffer,
+              !Self.offer(offer, survivesCommitOf: tab.webView?.url)
+        else { return }
+        tab.passwordSaveOffer = nil
+    }
+
+    static func offer(_ offer: PasswordSaveOffer, survivesCommitOf url: URL?) -> Bool {
+        url.flatMap { SavedLogin(origin: $0, username: offer.login.username) }?.origin == offer.login.origin
+    }
+
     private func offerToSave(username: String, password: String, origin: WKSecurityOrigin, in tab: Tab) {
         guard !tab.isPrivate, settings.offerToSavePasswords, !password.isEmpty,
               !settings.neverSavePasswordHosts.contains(origin.host)
         else { return }
-        let port = origin.port == 0 ? nil : origin.port
+        let login = SavedLogin(origin, username: username)
         let saved: SavedLogin?
         do {
-            saved = try passwords.logins(forHost: origin.host, isSecure: origin.protocol == "https")
-                .first { $0.username == username && $0.port == port }
+            saved = try passwords.logins(forHost: login.host, isSecure: login.isSecure)
+                .first { $0.username == username && $0.port == login.port }
         } catch {
             return AppServices.shared.reportNonFatal(error, "Looking up saved logins")
         }
         // When the stored password can't be read (the user declined a Keychain prompt) the
         // passwords can't be compared, and offering is right: saving replaces what's stored.
         if let saved, (try? passwords.password(for: saved)) == password { return }
-        let offer = PasswordSaveOffer(host: origin.host, username: username, password: password)
+        let offer = PasswordSaveOffer(login: login, password: password)
         if tab.passwordSaveOffer != offer {
             tab.passwordSaveOffer = offer
         }
+    }
+}
+
+extension SavedLogin {
+    /// A login for the page's security origin, which WebKit reports with port 0 for the
+    /// scheme's default port.
+    @MainActor
+    init(_ origin: WKSecurityOrigin, username: String) {
+        self.init(host: origin.host, isSecure: origin.protocol == "https",
+                  port: origin.port == 0 ? nil : origin.port, username: username, modified: nil)
     }
 }

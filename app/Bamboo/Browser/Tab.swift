@@ -10,8 +10,8 @@ struct PageLoadError: Equatable, Sendable {
 }
 
 struct PasswordSaveOffer: Equatable, Sendable {
-    var host: String
-    var username: String
+    /// The origin (scheme, host and port) the page submitted from, and the username.
+    var login: SavedLogin
     var password: String
 }
 

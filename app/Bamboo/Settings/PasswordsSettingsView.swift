@@ -189,8 +189,7 @@ struct PasswordsSettingsView: View {
         panel.allowedContentTypes = [.commaSeparatedText]
         guard await panel.begin() == .OK, let url = panel.url else { return }
         do {
-            try Data(passwords.exportCSV().utf8).write(to: url, options: .atomic)
-            try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
+            try passwords.exportCSV(to: url)
             errorMessage = nil
         } catch {
             errorMessage = "Couldn’t export passwords: \(error.localizedDescription)"

@@ -86,12 +86,21 @@ final class PasswordStore {
         try reload()
     }
 
-    /// Saves many logins, reading the list again once at the end.
-    func saveAll(_ entries: [(login: SavedLogin, password: String)]) throws {
+    /// Saves the logins that aren't saved yet and leaves existing ones alone, so an import
+    /// never replaces a newer password with an older one. Returns how many were added.
+    func saveNew(_ entries: [(login: SavedLogin, password: String)]) throws -> Int {
+        var added = 0
         for entry in entries {
-            try write(entry.login, password: entry.password)
+            var item = itemQuery(entry.login)
+            item[kSecAttrLabel as String] = Self.label
+            item[kSecValueData as String] = Data(entry.password.utf8)
+            let status = SecItemAdd(item as CFDictionary, nil)
+            if status == errSecDuplicateItem { continue }
+            try check(status)
+            added += 1
         }
         try reload()
+        return added
     }
 
     func update(_ login: SavedLogin, username: String, password: String) throws {
@@ -116,6 +125,21 @@ final class PasswordStore {
             lines.append(fields.map(Self.csvField).joined(separator: ","))
         }
         return lines.joined(separator: "\n") + "\n"
+    }
+
+    /// Writes `exportCSV()` to a new file only the user can read. The file is created with
+    /// mode 0600, so it is never readable by others, even for a moment.
+    func exportCSV(to url: URL) throws {
+        let csv = try exportCSV()
+        // The save panel already confirmed replacing an existing file.
+        if FileManager.default.fileExists(atPath: url.path) {
+            try FileManager.default.removeItem(at: url)
+        }
+        let descriptor = open(url.path, O_WRONLY | O_CREAT | O_EXCL, 0o600)
+        guard descriptor >= 0 else { throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno)) }
+        let handle = FileHandle(fileDescriptor: descriptor, closeOnDealloc: true)
+        try handle.write(contentsOf: Data(csv.utf8))
+        try handle.close()
     }
 
     /// Asks for Touch ID or the user's Mac password. Throws `LAError.userCancel` when they decline.
