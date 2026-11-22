@@ -35,7 +35,8 @@ final class ImportMappingTests: XCTestCase {
     func testFolderTitleNamesTheBrowser() {
         let source = SourceProfile(browser: .brave, browserName: "Brave", profileName: "Personal",
                                    profileDir: "/tmp/brave", kinds: [.bookmarks], accessError: nil)
-        XCTAssertEqual(ImportMapping.bookmarksFolderTitle(for: source), "Imported from Brave")
+        XCTAssertEqual(ImportMapping.bookmarksFolderTitle(for: source, namingProfile: false), "Imported from Brave")
+        XCTAssertEqual(ImportMapping.bookmarksFolderTitle(for: source, namingProfile: true), "Imported from Brave (Personal)")
     }
 
     func testCookieCarriesEveryAttribute() throws {

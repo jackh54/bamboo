@@ -21,12 +21,12 @@ struct ImportView: View {
                 Text("Import bookmarks and settings")
                     .font(.title3.weight(.semibold))
                 chooser
-            case .importing(let kind, let step, let total):
+            case .importing(let kind, let profileName, let step, let total):
                 Text("Importing…")
                     .font(.title3.weight(.semibold))
                 VStack(alignment: .leading, spacing: 6) {
                     ProgressView(value: Double(step - 1), total: Double(total))
-                    Text("\(kind.title), \(step) of \(total)")
+                    Text("\(profileName.map { "\($0): " } ?? "")\(kind.title), \(step) of \(total)")
                         .foregroundStyle(.secondary)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -49,29 +49,24 @@ struct ImportView: View {
 
     @ViewBuilder private var chooser: some View {
         if let sources = model.sources {
-            let available = sources.filter { $0.accessError == nil }
+            let browsers = model.browsers
             let blocked = sources.filter { $0.accessError != nil }
 
-            if available.isEmpty && blocked.isEmpty {
+            if browsers.isEmpty && blocked.isEmpty {
                 Text("Bamboo didn’t find another browser on this Mac. It can import from Brave, Chrome, Edge, Arc, Vivaldi, Opera, Chromium, Firefox and Safari.")
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
 
-            if !available.isEmpty {
-                Picker("From", selection: Binding {
-                    model.selectedSourceDirectory
-                } set: { directory in
-                    model.select(available.first { $0.profileDir == directory })
-                }) {
-                    ForEach(available, id: \.profileDir) { source in
+            if !browsers.isEmpty {
+                Picker("From", selection: Binding { model.selectedBrowser } set: { model.select($0) }) {
+                    ForEach(browsers) { browser in
                         Label {
-                            Text(available.filter { $0.browser == source.browser }.count > 1
-                                 ? "\(source.browserName): \(source.profileName)" : source.browserName)
+                            Text(browser.name)
                         } icon: {
-                            BrowserIcon(browser: source.browser)
+                            BrowserIcon(browser: browser.kind)
                         }
-                        .tag(Optional(source.profileDir))
+                        .tag(Optional(browser.kind))
                     }
                 }
             }
@@ -88,10 +83,25 @@ struct ImportView: View {
                 .font(.callout)
             }
 
-            if let source = model.selectedSource {
+            if let browser = model.chosenBrowser {
+                if browser.profiles.count > 1 {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Select profiles to import:")
+                        ForEach(browser.profiles, id: \.profileDir) { source in
+                            Toggle(source.profileName, isOn: Binding {
+                                model.selectedProfileDirectories.contains(source.profileDir)
+                            } set: { isOn in
+                                model.setProfile(source.profileDir, selected: isOn)
+                            })
+                            .toggleStyle(.checkbox)
+                        }
+                    }
+                    .padding(.leading, 2)
+                }
+
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Select items to import:")
-                    ForEach(ImportModel.kindOrder.filter(source.kinds.contains), id: \.self) { kind in
+                    ForEach(model.availableKinds, id: \.self) { kind in
                         Toggle(isOn: Binding {
                             model.kinds.contains(kind)
                         } set: { isOn in
@@ -113,8 +123,9 @@ struct ImportView: View {
                     }
                 }
 
-                if model.kinds.contains(.passwords) || model.kinds.contains(.cookies) {
-                    Text("macOS will ask to let Bamboo use “\(source.browserName) Safe Storage” from your keychain. Choose Allow so Bamboo can decrypt passwords and cookies.")
+                let chosenKinds = model.availableKinds.filter(model.kinds.contains)
+                if chosenKinds.contains(.passwords) || chosenKinds.contains(.cookies) {
+                    Text("macOS will ask to let Bamboo use “\(browser.name) Safe Storage” from your keychain. Choose Allow so Bamboo can decrypt passwords and cookies.")
                         .font(.callout)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -126,11 +137,11 @@ struct ImportView: View {
                 Button("Cancel") { dismiss() }
                     .keyboardShortcut(.cancelAction)
                 Button("Import") {
-                    guard let source = model.selectedSource else { return }
-                    Task { await model.run(source, into: targetProfile) }
+                    let sources = model.selectedSources
+                    Task { await model.run(sources, into: targetProfile) }
                 }
                 .keyboardShortcut(.defaultAction)
-                .disabled(model.selectedSource == nil || model.kinds.isEmpty)
+                .disabled(!model.canImport)
             }
         } else {
             HStack {
@@ -147,7 +158,7 @@ private struct ImportSummaryView: View {
     @State private var isEngineSwitched = false
 
     private var settings: AppSettings { AppServices.shared.settings }
-    private var succeeded: Bool { summary.results.allSatisfy(\.succeeded) }
+    private var succeeded: Bool { summary.succeeded }
 
     var body: some View {
         HStack(spacing: 10) {
@@ -159,17 +170,24 @@ private struct ImportSummaryView: View {
         }
 
         VStack(alignment: .leading, spacing: 8) {
-            ForEach(summary.results) { result in
-                Label {
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text(result.kind.title)
-                        Text(result.detail)
-                            .foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
+            ForEach(summary.profiles) { profile in
+                if summary.profiles.count > 1 {
+                    Text(profile.profileName)
+                        .font(.headline)
+                        .padding(.top, 4)
+                }
+                ForEach(profile.results) { result in
+                    Label {
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(result.kind.title)
+                            Text(result.detail)
+                                .foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    } icon: {
+                        Image(systemName: result.succeeded ? "checkmark" : "xmark")
+                            .foregroundStyle(result.succeeded ? Theme.palette(.bamboo).accent : .red)
                     }
-                } icon: {
-                    Image(systemName: result.succeeded ? "checkmark" : "xmark")
-                        .foregroundStyle(result.succeeded ? Theme.palette(.bamboo).accent : .red)
                 }
             }
         }

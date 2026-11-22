@@ -59,8 +59,9 @@ struct ExtensionsSettingsView: View {
     private func load() async {
         let home = FileManager.default.homeDirectoryForCurrentUser.path
         let results = await Task.detached(priority: .userInitiated) {
-            discoverProfiles(homeDir: home).filter { $0.kinds.contains(.extensions) }.map { source in
-                (source, Result { try importProfile(profile: source, request: ImportRequest(kinds: [.extensions], historySinceMs: nil)) })
+            let session = ImportSession()
+            return discoverProfiles(homeDir: home).filter { $0.kinds.contains(.extensions) }.map { source in
+                (source, Result { try session.importProfile(profile: source, request: ImportRequest(kinds: [.extensions], historySinceMs: nil)) })
             }
         }.value
         var listed: [(source: SourceProfile, extensions: [ImportedExtension])] = []

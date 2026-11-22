@@ -13,8 +13,8 @@ use url::Url;
 
 use crate::{
     BrowserKind, CookieSameSite, ImportBundle, ImportError, ImportKind, ImportRequest,
-    ImportedBookmark, ImportedCookie, ImportedExtension, ImportedHistory, ImportedLogin,
-    ImportedSearchEngine, SourceProfile,
+    ImportSession, ImportedBookmark, ImportedCookie, ImportedExtension, ImportedHistory,
+    ImportedLogin, ImportedSearchEngine, SourceProfile,
     common::{
         chromium_time_ms, exists, io_error, push_bookmark, read, read_database, read_optional,
     },
@@ -303,6 +303,7 @@ pub(crate) fn import(
     profile: &SourceProfile,
     request: &ImportRequest,
     bundle: &mut ImportBundle,
+    session: &ImportSession,
 ) -> Result<(), ImportError> {
     let browser = BROWSERS
         .iter()
@@ -320,11 +321,12 @@ pub(crate) fn import(
         bundle.history = history(dir, request.history_since_ms)?;
     }
     if wants(ImportKind::Cookies) || wants(ImportKind::Passwords) {
-        let password = keychain_password(
-            &format!("{} Safe Storage", browser.keychain_account),
-            browser.keychain_account,
-        )?;
-        let key = crypto::derive_key(&password);
+        let key = session.key(browser.kind, || {
+            keychain_password(
+                &format!("{} Safe Storage", browser.keychain_account),
+                browser.keychain_account,
+            )
+        })?;
         if wants(ImportKind::Cookies) {
             bundle.cookies = cookies(dir, &key, &mut bundle.warnings)?;
         }

@@ -2,8 +2,9 @@ import Foundation
 
 /// Converts what the importer read from another browser into what Bamboo's stores take.
 enum ImportMapping {
-    static func bookmarksFolderTitle(for source: SourceProfile) -> String {
-        "Imported from \(source.browserName)"
+    /// Names the profile as well when several profiles are imported, so their folders differ.
+    static func bookmarksFolderTitle(for source: SourceProfile, namingProfile: Bool) -> String {
+        namingProfile ? "Imported from \(source.browserName) (\(source.profileName))" : "Imported from \(source.browserName)"
     }
 
     static func bookmarks(_ items: [ImportedBookmark]) -> [BookmarkImport] {

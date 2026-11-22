@@ -55,7 +55,7 @@ fn import_kinds(
     kinds: &[ImportKind],
     history_since_ms: Option<i64>,
 ) -> Result<ImportBundle, ImportError> {
-    import_profile(profile.clone(), request(kinds, history_since_ms))
+    ImportSession::default().import_profile(profile.clone(), request(kinds, history_since_ms))
 }
 
 fn profile_named<'a>(profiles: &'a [SourceProfile], name: &str) -> &'a SourceProfile {
@@ -188,6 +188,44 @@ fn import_maps_denied_file_access_to_permission_denied() {
         }
         other => panic!("expected PermissionDenied, got {other:?}"),
     }
+}
+
+#[test]
+fn import_session_reads_each_browser_password_once() {
+    let session = ImportSession::default();
+    let mut reads = Vec::new();
+    for browser in [BrowserKind::Brave, BrowserKind::Brave, BrowserKind::Chrome] {
+        session
+            .key(browser, || {
+                reads.push(browser);
+                Ok(format!("{browser:?} password").into_bytes())
+            })
+            .unwrap();
+    }
+    assert_eq!(reads, [BrowserKind::Brave, BrowserKind::Chrome]);
+    assert_ne!(
+        session.key(BrowserKind::Brave, || unreachable!()).unwrap(),
+        session.key(BrowserKind::Chrome, || unreachable!()).unwrap()
+    );
+}
+
+#[test]
+fn import_session_asks_again_after_a_refused_keychain_read() {
+    let session = ImportSession::default();
+    let refused = session.key(BrowserKind::Brave, || {
+        Err(ImportError::Keychain {
+            message: "denied".into(),
+        })
+    });
+    assert!(matches!(refused, Err(ImportError::Keychain { .. })));
+    let mut asked_again = false;
+    session
+        .key(BrowserKind::Brave, || {
+            asked_again = true;
+            Ok(b"password".to_vec())
+        })
+        .unwrap();
+    assert!(asked_again);
 }
 
 #[test]

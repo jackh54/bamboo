@@ -18,6 +18,11 @@ mod safari;
 #[cfg(test)]
 mod tests;
 
+use std::{
+    collections::HashMap,
+    sync::{Arc, Mutex, PoisonError},
+};
+
 uniffi::setup_scaffolding!();
 
 #[derive(Debug, thiserror::Error, uniffi::Error)]
@@ -40,7 +45,7 @@ pub enum ImportError {
     Io { message: String },
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, uniffi::Enum)]
 pub enum BrowserKind {
     Brave,
     BraveBeta,
@@ -182,54 +187,88 @@ pub fn discover_profiles(home_dir: String) -> Vec<SourceProfile> {
     profiles
 }
 
-/// Reads the requested data kinds from `profile`. A kind that fails entirely
-/// (for example the user denies Keychain access) returns an error; partial
-/// failures are reported in `warnings`.
+/// One import run. It keeps each browser's Keychain key, so macOS asks once per
+/// browser instead of once for every profile and kind. The keys are dropped
+/// with the session.
+#[derive(Default, uniffi::Object)]
+pub struct ImportSession {
+    keys: Mutex<HashMap<BrowserKind, crypto::Key>>,
+}
+
 #[uniffi::export]
-pub fn import_profile(
-    profile: SourceProfile,
-    request: ImportRequest,
-) -> Result<ImportBundle, ImportError> {
-    let mut bundle = ImportBundle {
-        source: profile.clone(),
-        bookmarks: vec![],
-        history: vec![],
-        cookies: vec![],
-        logins: vec![],
-        search_engines: vec![],
-        extensions: vec![],
-        warnings: vec![],
-    };
-    let supported: &[ImportKind] = match profile.browser {
-        BrowserKind::Firefox => &[
-            ImportKind::Bookmarks,
-            ImportKind::History,
-            ImportKind::Cookies,
-        ],
-        BrowserKind::Safari => &[ImportKind::Bookmarks, ImportKind::History],
-        _ => &[
-            ImportKind::Bookmarks,
-            ImportKind::History,
-            ImportKind::Cookies,
-            ImportKind::Passwords,
-            ImportKind::SearchEngines,
-            ImportKind::Extensions,
-        ],
-    };
-    for kind in request
-        .kinds
-        .iter()
-        .filter(|kind| !supported.contains(kind))
-    {
-        bundle.warnings.push(format!(
-            "{kind:?} cannot be imported from {}",
-            profile.browser_name
-        ));
+impl ImportSession {
+    #[uniffi::constructor]
+    pub fn new() -> Arc<Self> {
+        Arc::new(Self::default())
     }
-    match profile.browser {
-        BrowserKind::Firefox => firefox::import(&profile, &request, &mut bundle)?,
-        BrowserKind::Safari => safari::import(&profile, &request, &mut bundle)?,
-        _ => chromium::import(&profile, &request, &mut bundle)?,
+
+    /// Reads the requested data kinds from `profile`. A kind that fails entirely
+    /// (for example the user denies Keychain access) returns an error; partial
+    /// failures are reported in `warnings`.
+    pub fn import_profile(
+        &self,
+        profile: SourceProfile,
+        request: ImportRequest,
+    ) -> Result<ImportBundle, ImportError> {
+        let mut bundle = ImportBundle {
+            source: profile.clone(),
+            bookmarks: vec![],
+            history: vec![],
+            cookies: vec![],
+            logins: vec![],
+            search_engines: vec![],
+            extensions: vec![],
+            warnings: vec![],
+        };
+        let supported: &[ImportKind] = match profile.browser {
+            BrowserKind::Firefox => &[
+                ImportKind::Bookmarks,
+                ImportKind::History,
+                ImportKind::Cookies,
+            ],
+            BrowserKind::Safari => &[ImportKind::Bookmarks, ImportKind::History],
+            _ => &[
+                ImportKind::Bookmarks,
+                ImportKind::History,
+                ImportKind::Cookies,
+                ImportKind::Passwords,
+                ImportKind::SearchEngines,
+                ImportKind::Extensions,
+            ],
+        };
+        for kind in request
+            .kinds
+            .iter()
+            .filter(|kind| !supported.contains(kind))
+        {
+            bundle.warnings.push(format!(
+                "{kind:?} cannot be imported from {}",
+                profile.browser_name
+            ));
+        }
+        match profile.browser {
+            BrowserKind::Firefox => firefox::import(&profile, &request, &mut bundle)?,
+            BrowserKind::Safari => safari::import(&profile, &request, &mut bundle)?,
+            _ => chromium::import(&profile, &request, &mut bundle, self)?,
+        }
+        Ok(bundle)
     }
-    Ok(bundle)
+}
+
+impl ImportSession {
+    /// The browser's value key. The Keychain password is read the first time;
+    /// a failed read is not kept, so the next import asks again.
+    pub(crate) fn key(
+        &self,
+        browser: BrowserKind,
+        read_password: impl FnOnce() -> Result<Vec<u8>, ImportError>,
+    ) -> Result<crypto::Key, ImportError> {
+        let mut keys = self.keys.lock().unwrap_or_else(PoisonError::into_inner);
+        if let Some(key) = keys.get(&browser) {
+            return Ok(*key);
+        }
+        let key = crypto::derive_key(&read_password()?);
+        keys.insert(browser, key);
+        Ok(key)
+    }
 }
