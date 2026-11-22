@@ -1,8 +1,10 @@
 import AppKit
 import SwiftUI
 
+/// Settings sections, in Brave's order. `importData` opens Get started with the import dialog.
 enum SettingsSection: String, CaseIterable, Identifiable, Hashable {
-    case general, appearance, search, shields, privacy, passwords, profiles, agents, importData, advanced
+    case getStarted, appearance, content, shields, privacy, agents, search, extensions, passwords, downloads, system, about
+    case importData
     var id: String { rawValue }
 }
 
@@ -34,7 +36,10 @@ final class SettingsWindowController: NSWindowController {
     }
 
     func show(section: SettingsSection?) {
-        if let section {
+        if section == .importData {
+            selection.section = .getStarted
+            selection.isImportPresented = true
+        } else if let section {
             selection.section = section
         }
         showWindow(nil)
@@ -46,5 +51,7 @@ final class SettingsWindowController: NSWindowController {
 @MainActor
 @Observable
 final class SettingsSelection {
-    var section: SettingsSection = .general
+    var section: SettingsSection = .getStarted
+    /// The "Import bookmarks and settings" dialog is showing.
+    var isImportPresented = false
 }
