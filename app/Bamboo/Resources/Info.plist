@@ -89,7 +89,7 @@
 	<key>SUFeedURL</key>
 	<string>https://github.com/jackh54/bamboo/releases/latest/download/appcast.xml</string>
 	<key>SUPublicEDKey</key>
-	<string></string>
+	<string>vRFttCoB348B2KtRdzvBETwJhV+M9/TKwS1nplyqOiM=</string>
 	<key>SUScheduledCheckInterval</key>
 	<integer>21600</integer>
 </dict>
