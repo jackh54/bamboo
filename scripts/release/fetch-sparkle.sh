@@ -18,7 +18,7 @@ dest="$1"
 
 mkdir -p "$dest"
 archive="$dest/Sparkle-$version.tar.xz"
-curl --fail --silent --show-error --location --retry 3 --output "$archive" \
+curl --fail --silent --show-error --location --retry 3 --retry-all-errors --output "$archive" \
   "https://github.com/sparkle-project/Sparkle/releases/download/$version/Sparkle-$version.tar.xz"
 echo "$sha256  $archive" | shasum -a 256 --check --status
 tar -xf "$archive" -C "$dest"

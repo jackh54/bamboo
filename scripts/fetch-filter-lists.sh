@@ -22,7 +22,7 @@ mkdir -p "$out"
 # parse as a list of nonsense rules.
 fetch() {
   local url="$1" dest="$2"
-  curl --fail --silent --show-error --location --retry 3 --max-time 120 --output "$dest" "$url"
+  curl --fail --silent --show-error --location --retry 3 --retry-all-errors --max-time 120 --output "$dest" "$url"
   if [[ ! -s "$dest" ]]; then
     echo "error: $url returned an empty body" >&2
     exit 1
