@@ -9,7 +9,7 @@ publish = false
 [dependencies]
 uniffi.workspace = true
 thiserror.workspace = true
-rusqlite.workspace = true
+rusqlite = { workspace = true, features = ["fallible_uint"] }
 
 [dev-dependencies]
 tempfile.workspace = true
