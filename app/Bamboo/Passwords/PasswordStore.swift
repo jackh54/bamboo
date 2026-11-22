@@ -119,9 +119,11 @@ final class PasswordStore {
 
     /// Deletes every login in this store, for a profile that is being deleted.
     func deleteAll() throws {
+        // Without kSecMatchLimitAll the file-based keychain deletes only the first match.
         let query: [String: Any] = [
             kSecClass as String: kSecClassInternetPassword,
             kSecAttrDescription as String: itemDescription,
+            kSecMatchLimit as String: kSecMatchLimitAll,
         ]
         let status = SecItemDelete(query as CFDictionary)
         guard status == errSecSuccess || status == errSecItemNotFound else { throw KeychainError(status: status) }

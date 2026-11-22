@@ -20,10 +20,11 @@ final class ProfileManagerTests: XCTestCase {
         let manager = ProfileManager()
         let profile = manager.createProfile(name: "Passwords \(UUID().uuidString)", symbol: "person.crop.circle")
         let server = "bamboo-test-\(UUID().uuidString.lowercased()).invalid"
-        let login = SavedLogin(host: server, isSecure: true, port: nil, username: "jack", modified: nil)
-
-        try profile.passwords.save(login, password: "secret")
-        XCTAssertEqual(try profile.passwords.logins(forHost: server, isSecure: true).map(\.username), ["jack"])
+        for username in ["amy", "jack"] {
+            let login = SavedLogin(host: server, isSecure: true, port: nil, username: username, modified: nil)
+            try profile.passwords.save(login, password: "secret")
+        }
+        XCTAssertEqual(try profile.passwords.logins(forHost: server, isSecure: true).map(\.username), ["amy", "jack"])
         XCTAssertTrue(try manager.defaultProfile.passwords.logins(forHost: server, isSecure: true).isEmpty)
 
         let description = profile.passwords.itemDescription

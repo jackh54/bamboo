@@ -18,6 +18,7 @@ final class PasswordStoreTests: XCTestCase {
         let query: [String: Any] = [
             kSecClass as String: kSecClassInternetPassword,
             kSecAttrDescription as String: itemDescription,
+            kSecMatchLimit as String: kSecMatchLimitAll,
         ]
         let status = SecItemDelete(query as CFDictionary)
         XCTAssertTrue(status == errSecSuccess || status == errSecItemNotFound, "Cleanup failed: \(status)")

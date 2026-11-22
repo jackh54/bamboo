@@ -16,12 +16,10 @@ struct PasswordsSettingsView: View {
     @State private var isExportWarningShown = false
     @State private var errorMessage: String?
 
-    /// Each profile has its own passwords, as in Brave. Shows the front window's profile
-    /// until the user picks another.
+    /// Each profile has its own passwords, as in Brave. Starts on the front window's
+    /// profile and stays on it until the user picks another.
     private var profile: Profile {
-        profileID.flatMap(profiles.profile(id:))
-            ?? AppServices.shared.windows.frontmostNonPrivate?.selectedSpace.profile
-            ?? profiles.defaultProfile
+        profileID.flatMap(profiles.profile(id:)) ?? profiles.defaultProfile
     }
 
     private var passwords: PasswordStore { profile.passwords }
@@ -106,6 +104,11 @@ struct PasswordsSettingsView: View {
             }
         }
         .formStyle(.grouped)
+        .onAppear {
+            if profileID == nil {
+                profileID = AppServices.shared.windows.frontmostNonPrivate?.selectedSpace.profile.id
+            }
+        }
         .task(id: profile.id) {
             revealed = [:]
             load()
@@ -167,10 +170,12 @@ struct PasswordsSettingsView: View {
         editing = LoginDraft(login: login, password: password)
     }
 
+    /// Nil when the user doesn't unlock, or switched to another profile meanwhile.
     private func unlockedPassword(for login: SavedLogin) async -> String? {
-        guard await unlock() else { return nil }
+        let store = passwords
+        guard await unlock(), store === passwords else { return nil }
         do {
-            let password = try passwords.password(for: login)
+            let password = try store.password(for: login)
             errorMessage = nil
             return password
         } catch {
@@ -205,13 +210,14 @@ struct PasswordsSettingsView: View {
     }
 
     private func export() async {
+        let store = passwords
         guard await unlock() else { return }
         let panel = NSSavePanel()
         panel.nameFieldStringValue = "Bamboo Passwords.csv"
         panel.allowedContentTypes = [.commaSeparatedText]
         guard await panel.begin() == .OK, let url = panel.url else { return }
         do {
-            try passwords.exportCSV(to: url)
+            try store.exportCSV(to: url)
             errorMessage = nil
         } catch {
             errorMessage = "Couldn’t export passwords: \(error.localizedDescription)"

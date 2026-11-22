@@ -136,6 +136,7 @@ final class ImportModel {
         // Separate profiles each get their own "Imported from Brave" folder.
         let foldersNameProfile = namesProfiles && destination != .matchingProfiles
         var profile = AppServices.shared.profiles.defaultProfile
+        var usedProfiles: Set<Profile.ID> = []
         let steps = sources.flatMap { source in
             Self.kindOrder.filter { kinds.contains($0) && source.kinds.contains($0) }.map { (source, $0) }
         }
@@ -145,7 +146,8 @@ final class ImportModel {
             phase = .importing(kind, profileName: namesProfiles ? source.profileName : nil, step: index + 1, of: steps.count)
             if summary.profiles.last?.profileDir != source.profileDir {
                 summary.profiles.append(.init(profileDir: source.profileDir, profileName: source.profileName))
-                profile = Self.profile(for: source, in: destination)
+                profile = Self.profile(for: source, in: destination, avoiding: usedProfiles)
+                usedProfiles.insert(profile.id)
             }
             let result: ImportSummary.Result
             do {
@@ -167,11 +169,21 @@ final class ImportModel {
         phase = .finished(summary)
     }
 
-    private static func profile(for source: SourceProfile, in destination: Destination) -> Profile {
+    /// With `.matchingProfiles`, a source whose name another source in this run already
+    /// took (browsers allow two profiles with one name) gets "Name 2", so they stay apart.
+    private static func profile(
+        for source: SourceProfile, in destination: Destination, avoiding used: Set<Profile.ID>
+    ) -> Profile {
         let profiles = AppServices.shared.profiles
         switch destination {
         case .matchingProfiles:
-            return profiles.profile(named: source.profileName)
+            var name = source.profileName
+            var number = 2
+            while let taken = profiles.profiles.first(where: { $0.name == name }), used.contains(taken.id) {
+                name = "\(source.profileName) \(number)"
+                number += 1
+            }
+            return profiles.profile(named: name)
         case .profile(let id):
             guard let profile = profiles.profile(id: id) else {
                 preconditionFailure("The import's target profile \(id) no longer exists")
