@@ -26,8 +26,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        services.prepareForTermination()
-        return .terminateNow
+        if services.settings.warnBeforeQuitting, !services.windows.allTabs.isEmpty {
+            let alert = NSAlert()
+            alert.messageText = "Quit Bamboo?"
+            alert.informativeText = services.settings.startupBehavior == .restoreSession
+                ? "Your windows and tabs will reopen the next time you open Bamboo."
+                : "Your open windows and tabs will close."
+            alert.addButton(withTitle: "Quit")
+            alert.addButton(withTitle: "Cancel")
+            guard alert.runModal() == .alertFirstButtonReturn else { return .terminateCancel }
+        }
+        // Later, because clearing browsing data on quit has to finish first.
+        Task {
+            await services.prepareForTermination()
+            sender.reply(toApplicationShouldTerminate: true)
+        }
+        return .terminateLater
     }
 
     // MARK: - App-level menu actions (window-level actions live on BrowserWindowController)
