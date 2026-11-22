@@ -479,6 +479,15 @@ impl Shields {
         let mut filter_set = FilterSet::new(false);
         for text in texts {
             filter_set.add_filter_list(text.into(), cosmetic_only);
+            // `@@...$generichide` is a network filter, but it is what turns generic hiding off for a site.
+            let generichide_exceptions: String = text
+                .lines()
+                .filter(|line| is_generichide_exception(line))
+                .flat_map(|line| [line, "\n"])
+                .collect();
+            if !generichide_exceptions.is_empty() {
+                filter_set.add_filter_list(generichide_exceptions, ParseOptions::default());
+            }
         }
         let mut engine = Engine::new_with_filter_set(filter_set);
         if let Some(json) = &resources_json {
@@ -604,6 +613,17 @@ fn sorted(set: HashSet<String>) -> Vec<String> {
     let mut values: Vec<String> = set.into_iter().collect();
     values.sort();
     values
+}
+
+/// Matches on the option list after the last `$`, not on the whole line, so a
+/// URL pattern that merely contains "ghide" doesn't qualify.
+fn is_generichide_exception(line: &str) -> bool {
+    line.starts_with("@@")
+        && line.rsplit_once('$').is_some_and(|(_, options)| {
+            options.split(',').any(|option| {
+                option.eq_ignore_ascii_case("generichide") || option.eq_ignore_ascii_case("ghide")
+            })
+        })
 }
 
 fn is_stale(last_updated_ms: Option<i64>, max_age_ms: i64, now_ms: i64) -> bool {

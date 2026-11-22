@@ -232,6 +232,34 @@ fn cosmetic_resources_for_a_host_specific_rule() {
 }
 
 #[test]
+fn generichide_exception_applies_to_its_site_only() {
+    let (dir, shields) = fixture();
+    shields
+        .set_custom_rules(
+            "@@||site.test^$generichide\n@@||short.test^$ghide\n@@||tricky.test/ghide^$image"
+                .into(),
+        )
+        .expect("custom rules");
+    shields.rebuild().expect("rebuild");
+    let generichide =
+        |shields: &Shields, url: &str| shields.cosmetic_resources(url.into()).generichide;
+    assert!(generichide(&shields, "https://site.test/page"));
+    assert!(generichide(&shields, "https://short.test/"));
+    assert!(!generichide(&shields, "https://other.test/"));
+    assert!(
+        !generichide(&shields, "https://tricky.test/ghide"),
+        "only the option list decides, not the pattern"
+    );
+
+    drop(shields);
+    let reopened = open_in(&dir);
+    assert!(
+        generichide(&reopened, "https://site.test/"),
+        "survives the cached engine"
+    );
+}
+
+#[test]
 fn hidden_selectors_for_a_generic_rule() {
     let (_dir, shields) = fixture();
     shields.rebuild().expect("rebuild");
