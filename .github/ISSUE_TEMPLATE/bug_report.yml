@@ -1,0 +1,42 @@
+name: Bug report
+description: Something in Bamboo doesn't work as it should
+labels: [bug]
+body:
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What you did, what you expected, and what happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Include a URL if a specific page triggers it.
+      placeholder: |
+        1. Open ...
+        2. Click ...
+    validations:
+      required: true
+  - type: input
+    id: bamboo-version
+    attributes:
+      label: Bamboo version
+      description: Bamboo > About Bamboo.
+      placeholder: "0.1.0 (12)"
+    validations:
+      required: true
+  - type: input
+    id: macos-version
+    attributes:
+      label: macOS version
+      description: Apple menu > About This Mac.
+      placeholder: "macOS 15.4, Apple silicon"
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or screenshots
+      description: Crash reports are in ~/Library/Logs/DiagnosticReports.
