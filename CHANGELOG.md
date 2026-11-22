@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.2.0](https://github.com/jackh54/bamboo/compare/v0.1.0...v0.2.0) (2026-11-22)
+
+
+### Features
+
+* **import:** import each profile into its own Bamboo profile ([01ac6e1](https://github.com/jackh54/bamboo/commit/01ac6e1880e6fea40a8b47641f6a42328847957d))
+* **import:** list each browser once and choose its profiles ([6484154](https://github.com/jackh54/bamboo/commit/648415414bc05e82626cf13c5bd5ba8bd142a25e))
+* **passwords:** give each profile its own saved passwords ([584a827](https://github.com/jackh54/bamboo/commit/584a82705b0a513ac603c3b7ce8ef2831bfacc34))
+* **profiles:** switch profiles from the toolbar like Brave ([86cfe41](https://github.com/jackh54/bamboo/commit/86cfe41fa2a4cfb5753fc59cecf8b06fb222f781))
+* **profiles:** tell profile windows apart ([aae81ad](https://github.com/jackh54/bamboo/commit/aae81adc90e6779fbad6740b0ec6ff7066fec9f0))
+
+
+### Bug Fixes
+
+* **import:** ask for the Keychain key once even after a refusal ([5167156](https://github.com/jackh54/bamboo/commit/5167156fb79934164cb28dcf03c65084a85e409e))
+* **import:** skip Chromium history entries with no counted visits ([437785e](https://github.com/jackh54/bamboo/commit/437785eb05cb292ed24da0a4147ec13478f15a21))
+* **passwords:** delete every item and keep settings on one profile ([427ff71](https://github.com/jackh54/bamboo/commit/427ff71fff43cca8315012a53a2d44c7dd1d757c))
+
 ## [0.1.0](https://github.com/jackh54/bamboo/compare/v0.1.0...v0.1.0) (2026-11-22)
 
 
